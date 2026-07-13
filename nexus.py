@@ -8,6 +8,7 @@ from nexus.backtest import calculate_statistics, run_backtest
 from nexus.config import load_config
 from nexus.data import load_ohlcv_csv
 from nexus.indicators import add_indicators
+from nexus.optimizer import SequentialOptimizer, load_optimizer_config
 from nexus.signals import add_signal_columns, extract_signals
 from nexus.reports.monthly_report import MonthlyReport
 from nexus.reports.trade_charts import TradeChartGenerator
@@ -51,6 +52,33 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=10,
         help="Maximum number of trade charts. Default: 10",
+    )
+
+
+    optimize_parser = subparsers.add_parser(
+        "optimize",
+        help="Run a small sequential parameter optimizer.",
+    )
+    optimize_parser.add_argument("csv_path", type=Path)
+    optimize_parser.add_argument(
+        "--config",
+        type=Path,
+        default=Path("config/strategy.yaml"),
+    )
+    optimize_parser.add_argument(
+        "--optimizer-config",
+        type=Path,
+        default=Path("config/optimizer.yaml"),
+    )
+    optimize_parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("reports/optimizer_results.csv"),
+    )
+    optimize_parser.add_argument(
+        "--best-config-output",
+        type=Path,
+        default=Path("reports/best_strategy.yaml"),
     )
 
     return parser
@@ -166,6 +194,40 @@ def run_backtest_command(
     return 0
 
 
+
+def run_optimize_command(
+    csv_path: Path,
+    config_path: Path,
+    optimizer_config_path: Path,
+    output_path: Path,
+    best_config_output: Path,
+) -> int:
+    strategy_config = load_config(config_path)
+    optimizer_config = load_optimizer_config(optimizer_config_path)
+    market = load_ohlcv_csv(csv_path)
+
+    optimizer = SequentialOptimizer(strategy_config, optimizer_config)
+    results, best_config = optimizer.run(market)
+    optimizer.export_results(results, output_path)
+    optimizer.export_best_config(best_config, best_config_output)
+
+    print("NEXUS V2 v2.0.1-dev10")
+    print(f"- Optimizer runs:  {len(results):,}")
+    if not results.empty:
+        valid = results.loc[results["objective"] != float("-inf")]
+        if not valid.empty:
+            best = valid.sort_values(
+                ["objective", "net_profit", "trades"],
+                ascending=False,
+            ).iloc[0]
+            print(f"- Best PF:         {best['profit_factor']:.4f}")
+            print(f"- Best trades:     {int(best['trades']):,}")
+            print(f"- Best parameter:  {best['parameter']}={best['value']}")
+    print(f"- Results saved:   {output_path.resolve()}")
+    print(f"- Best config:     {best_config_output.resolve()}")
+    return 0
+
+
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
@@ -183,6 +245,14 @@ def main() -> int:
                 args.monthly_output,
                 args.charts,
                 args.max_charts,
+            )
+        if args.command == "optimize":
+            return run_optimize_command(
+                args.csv_path,
+                args.config,
+                args.optimizer_config,
+                args.output,
+                args.best_config_output,
             )
     except (FileNotFoundError, ValueError, KeyError, TypeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

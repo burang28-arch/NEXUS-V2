@@ -1,0 +1,49 @@
+project:
+  name: NEXUS V2
+  version: 2.0.0-c
+  symbol: BTCUSDT
+  timeframe: 15m
+indicators:
+  rsi:
+    length: 14
+  adx:
+    length: 14
+  bollinger:
+    length: 20
+    stddev: 2.0
+  atr:
+    length: 14
+  volume:
+    ma_length: 20
+  swing:
+    left_bars: 2
+    right_bars: 2
+entry:
+  adx_max: 22.0
+  rsi_long_max: 35.0
+  rsi_short_min: 62.0
+  require_band_touch: true
+scoring:
+  volume_above_average_points: 1
+  reversal_candle_points: 1
+  size_multipliers:
+    0: 0.5
+    1: 1.0
+    2: 1.5
+risk:
+  initial_equity: 1000.0
+  base_margin_pct: 2.0
+  leverage: 1.0
+  max_total_margin_pct: 6.0
+  margin_mode: isolated
+  position_mode: hedge
+  max_long_positions: 1
+  max_short_positions: 1
+  atr_stop_buffer: 0.1
+  fee_rate_pct: 0.055
+  slippage_rate_pct: 0.02
+exit:
+  tp1_fraction: 0.7
+  tp2_fraction: 0.3
+  tp1_target: bollinger_middle
+  tp2_target: opposite_band

@@ -1,58 +1,42 @@
-# NEXUS V2 — v2.0.1-dev9
+# NEXUS V2 — v2.0.1-dev10
 
-DEV9은 월별 백테스트 요약 CSV를 생성합니다.
+DEV10은 소형 순차 옵티마이저를 추가합니다.
 
-## 추가 파일
+## 최적화 대상
 
-```text
-nexus/reports/monthly_report.py
-tests/test_monthly_report.py
+- ADX 최대값
+- RSI 롱 기준
+- RSI 숏 기준
+- ATR 손절 버퍼
+
+모든 조합을 한꺼번에 돌리지 않고, 각 변수를 순서대로 테스트합니다.
+기본 설정에서는 총 16회 백테스트합니다.
+
+## 실행
+
+```powershell
+.\.venv\Scripts\python.exe nexus.py optimize .\data\BTCUSDT_15M.csv
 ```
 
-## 출력 파일
+출력:
 
 ```text
-reports/monthly_report.csv
+reports\optimizer_results.csv
+reports\best_strategy.yaml
 ```
-
-## 포함 항목
-
-- month
-- trades
-- long_trades
-- short_trades
-- wins
-- losses
-- win_rate_pct
-- profit_factor
-- gross_profit
-- gross_loss
-- net_profit
-- average_trade
-- best_trade
-- worst_trade
-- average_holding_bars
 
 ## 검증
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
-.\.venv\Scripts\python.exe nexus.py backtest .\data\BTCUSDT_15M.csv
 ```
 
-기존 백테스트 수치는 동일해야 합니다.
-
-```text
-Trades: 277
-Win rate: 24.91%
-Profit factor: 0.5231
-Net profit: -5.21
-```
+옵티마이저는 전체 데이터에서 시간이 걸릴 수 있습니다.
 
 ## 커밋
 
 ```powershell
 git add .
-git commit -m "feat: add monthly performance report"
+git commit -m "feat: add sequential strategy optimizer"
 git push
 ```

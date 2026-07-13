@@ -1,0 +1,28 @@
+objective:
+  minimum_trades: 200
+  minimum_average_trades_per_month: 4.0
+
+parameters:
+  entry.adx_max:
+    - 18.0
+    - 20.0
+    - 22.0
+    - 24.0
+
+  entry.rsi_long_max:
+    - 30.0
+    - 33.0
+    - 35.0
+    - 38.0
+
+  entry.rsi_short_min:
+    - 62.0
+    - 65.0
+    - 67.0
+    - 70.0
+
+  risk.atr_stop_buffer:
+    - 0.1
+    - 0.2
+    - 0.3
+    - 0.5
