@@ -1,29 +1,37 @@
-# NEXUS V2 — v2.0.1-dev7
+# NEXUS V2 — v2.0.1-dev9
 
-DEV7은 백테스트 거래 로그를 분석하기 쉬운 CSV로 확장합니다.
+DEV9은 월별 백테스트 요약 CSV를 생성합니다.
 
 ## 추가 파일
 
 ```text
-nexus/reports/trade_logger.py
-tests/test_trade_logger.py
+nexus/reports/monthly_report.py
+tests/test_monthly_report.py
 ```
 
-## 거래 로그 추가 열
+## 출력 파일
 
-- `trade_id`
-- `result`
-- `entry_month`
-- `entry_date`
-- `entry_hour_utc`
-- `entry_weekday_utc`
-- `duration_minutes`
-- `pnl_on_notional_pct`
-- `confirmation`
-- `setup_summary`
-- `exit_summary`
+```text
+reports/monthly_report.csv
+```
 
-기존 진입, 청산, 손절, 수수료 및 손익 계산은 변경하지 않습니다.
+## 포함 항목
+
+- month
+- trades
+- long_trades
+- short_trades
+- wins
+- losses
+- win_rate_pct
+- profit_factor
+- gross_profit
+- gross_loss
+- net_profit
+- average_trade
+- best_trade
+- worst_trade
+- average_holding_bars
 
 ## 검증
 
@@ -32,14 +40,7 @@ tests/test_trade_logger.py
 .\.venv\Scripts\python.exe nexus.py backtest .\data\BTCUSDT_15M.csv
 ```
 
-결과 파일:
-
-```text
-reports\trades.csv
-reports\equity.csv
-```
-
-백테스트 기준값은 기존과 동일해야 합니다.
+기존 백테스트 수치는 동일해야 합니다.
 
 ```text
 Trades: 277
@@ -52,6 +53,6 @@ Net profit: -5.21
 
 ```powershell
 git add .
-git commit -m "feat: add detailed trade logger"
+git commit -m "feat: add monthly performance report"
 git push
 ```

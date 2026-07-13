@@ -9,6 +9,8 @@ from nexus.config import load_config
 from nexus.data import load_ohlcv_csv
 from nexus.indicators import add_indicators
 from nexus.signals import add_signal_columns, extract_signals
+from nexus.reports.monthly_report import MonthlyReport
+from nexus.reports.trade_charts import TradeChartGenerator
 from nexus.reports.trade_logger import TradeLogger
 
 
@@ -34,6 +36,22 @@ def build_parser() -> argparse.ArgumentParser:
     backtest_parser.add_argument("--config", type=Path, default=Path("config/strategy.yaml"))
     backtest_parser.add_argument("--trades-output", type=Path, default=Path("reports/trades.csv"))
     backtest_parser.add_argument("--equity-output", type=Path, default=Path("reports/equity.csv"))
+    backtest_parser.add_argument(
+        "--monthly-output",
+        type=Path,
+        default=Path("reports/monthly_report.csv"),
+    )
+    backtest_parser.add_argument(
+        "--charts",
+        action="store_true",
+        help="Generate charts for the first completed trades.",
+    )
+    backtest_parser.add_argument(
+        "--max-charts",
+        type=int,
+        default=10,
+        help="Maximum number of trade charts. Default: 10",
+    )
 
     return parser
 
@@ -87,6 +105,9 @@ def run_backtest_command(
     config_path: Path,
     trades_output: Path,
     equity_output: Path,
+    monthly_output: Path,
+    charts: bool,
+    max_charts: int,
 ) -> int:
     config, frame = _load_enriched(csv_path, config_path)
     trades, curve = run_backtest(frame, config)
@@ -100,6 +121,16 @@ def run_backtest_command(
     equity_output.parent.mkdir(parents=True, exist_ok=True)
     trade_log = TradeLogger.export(trades, trades_output)
     curve.to_csv(equity_output, index=False)
+    MonthlyReport.export(trade_log, monthly_output)
+
+    chart_paths = []
+    if charts and not trade_log.empty:
+        generator = TradeChartGenerator(max_charts=max_charts)
+        chart_paths = generator.generate(
+            frame,
+            trade_log,
+            Path("reports/trade_charts"),
+        )
 
     if not trades.empty:
         monthly = (
@@ -129,6 +160,9 @@ def run_backtest_command(
     print(f"- Min/Max month:   {min_month}/{max_month}")
     print(f"- Trades saved:    {trades_output.resolve()}")
     print(f"- Equity saved:    {equity_output.resolve()}")
+    print(f"- Monthly report:  {monthly_output.resolve()}")
+    if charts:
+        print(f"- Trade charts:    {len(chart_paths)} generated")
     return 0
 
 
@@ -146,6 +180,9 @@ def main() -> int:
                 args.config,
                 args.trades_output,
                 args.equity_output,
+                args.monthly_output,
+                args.charts,
+                args.max_charts,
             )
     except (FileNotFoundError, ValueError, KeyError, TypeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
