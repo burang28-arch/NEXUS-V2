@@ -12,6 +12,7 @@ from nexus.optimizer import SequentialOptimizer, load_optimizer_config
 from nexus.signals import add_signal_columns, extract_signals
 from nexus.reports.monthly_report import MonthlyReport
 from nexus.reports.signal_analysis import SignalAnalyzer
+from nexus.reports.stop_analysis import StopAnalysis
 from nexus.reports.trade_charts import TradeChartGenerator
 from nexus.reports.trade_frequency import TradeFrequencyAnalyzer
 from nexus.reports.trade_logger import TradeLogger
@@ -58,6 +59,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--reject-reasons-output",
         type=Path,
         default=Path("reports/reject_reasons.csv"),
+    )
+    backtest_parser.add_argument(
+        "--stop-analysis-output",
+        type=Path,
+        default=Path("reports/stop_analysis.csv"),
     )
     backtest_parser.add_argument(
         "--charts",
@@ -154,6 +160,7 @@ def run_backtest_command(
     signal_analysis_output: Path,
     trade_frequency_output: Path,
     reject_reasons_output: Path,
+    stop_analysis_output: Path,
     charts: bool,
     max_charts: int,
 ) -> int:
@@ -178,6 +185,7 @@ def run_backtest_command(
         trade_frequency_output,
         reject_reasons_output,
     )
+    StopAnalysis.export(frame, config, stop_analysis_output)
 
     chart_paths = []
     if charts and not trade_log.empty:
@@ -220,6 +228,7 @@ def run_backtest_command(
     print(f"- Signal analysis: {signal_analysis_output.resolve()}")
     print(f"- Trade frequency: {trade_frequency_output.resolve()}")
     print(f"- Reject reasons:  {reject_reasons_output.resolve()}")
+    print(f"- Stop analysis:   {stop_analysis_output.resolve()}")
     if charts:
         print(f"- Trade charts:    {len(chart_paths)} generated")
     return 0
@@ -277,6 +286,7 @@ def main() -> int:
                 args.signal_analysis_output,
                 args.trade_frequency_output,
                 args.reject_reasons_output,
+                args.stop_analysis_output,
                 args.charts,
                 args.max_charts,
             )
