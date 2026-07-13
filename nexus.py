@@ -11,6 +11,7 @@ from nexus.indicators import add_indicators
 from nexus.optimizer import SequentialOptimizer, load_optimizer_config
 from nexus.signals import add_signal_columns, extract_signals
 from nexus.reports.monthly_report import MonthlyReport
+from nexus.reports.signal_analysis import SignalAnalyzer
 from nexus.reports.trade_charts import TradeChartGenerator
 from nexus.reports.trade_logger import TradeLogger
 
@@ -41,6 +42,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--monthly-output",
         type=Path,
         default=Path("reports/monthly_report.csv"),
+    )
+    backtest_parser.add_argument(
+        "--signal-analysis-output",
+        type=Path,
+        default=Path("reports/signal_analysis.csv"),
     )
     backtest_parser.add_argument(
         "--charts",
@@ -134,6 +140,7 @@ def run_backtest_command(
     trades_output: Path,
     equity_output: Path,
     monthly_output: Path,
+    signal_analysis_output: Path,
     charts: bool,
     max_charts: int,
 ) -> int:
@@ -150,6 +157,7 @@ def run_backtest_command(
     trade_log = TradeLogger.export(trades, trades_output)
     curve.to_csv(equity_output, index=False)
     MonthlyReport.export(trade_log, monthly_output)
+    SignalAnalyzer.export(trade_log, signal_analysis_output)
 
     chart_paths = []
     if charts and not trade_log.empty:
@@ -189,6 +197,7 @@ def run_backtest_command(
     print(f"- Trades saved:    {trades_output.resolve()}")
     print(f"- Equity saved:    {equity_output.resolve()}")
     print(f"- Monthly report:  {monthly_output.resolve()}")
+    print(f"- Signal analysis: {signal_analysis_output.resolve()}")
     if charts:
         print(f"- Trade charts:    {len(chart_paths)} generated")
     return 0
@@ -243,6 +252,7 @@ def main() -> int:
                 args.trades_output,
                 args.equity_output,
                 args.monthly_output,
+                args.signal_analysis_output,
                 args.charts,
                 args.max_charts,
             )
