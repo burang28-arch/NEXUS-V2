@@ -13,6 +13,7 @@ from nexus.signals import add_signal_columns, extract_signals
 from nexus.reports.monthly_report import MonthlyReport
 from nexus.reports.signal_analysis import SignalAnalyzer
 from nexus.reports.trade_charts import TradeChartGenerator
+from nexus.reports.trade_frequency import TradeFrequencyAnalyzer
 from nexus.reports.trade_logger import TradeLogger
 
 
@@ -47,6 +48,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--signal-analysis-output",
         type=Path,
         default=Path("reports/signal_analysis.csv"),
+    )
+    backtest_parser.add_argument(
+        "--trade-frequency-output",
+        type=Path,
+        default=Path("reports/trade_frequency.csv"),
+    )
+    backtest_parser.add_argument(
+        "--reject-reasons-output",
+        type=Path,
+        default=Path("reports/reject_reasons.csv"),
     )
     backtest_parser.add_argument(
         "--charts",
@@ -141,6 +152,8 @@ def run_backtest_command(
     equity_output: Path,
     monthly_output: Path,
     signal_analysis_output: Path,
+    trade_frequency_output: Path,
+    reject_reasons_output: Path,
     charts: bool,
     max_charts: int,
 ) -> int:
@@ -158,6 +171,13 @@ def run_backtest_command(
     curve.to_csv(equity_output, index=False)
     MonthlyReport.export(trade_log, monthly_output)
     SignalAnalyzer.export(trade_log, signal_analysis_output)
+    TradeFrequencyAnalyzer.export(
+        frame,
+        trade_log,
+        config,
+        trade_frequency_output,
+        reject_reasons_output,
+    )
 
     chart_paths = []
     if charts and not trade_log.empty:
@@ -198,6 +218,8 @@ def run_backtest_command(
     print(f"- Equity saved:    {equity_output.resolve()}")
     print(f"- Monthly report:  {monthly_output.resolve()}")
     print(f"- Signal analysis: {signal_analysis_output.resolve()}")
+    print(f"- Trade frequency: {trade_frequency_output.resolve()}")
+    print(f"- Reject reasons:  {reject_reasons_output.resolve()}")
     if charts:
         print(f"- Trade charts:    {len(chart_paths)} generated")
     return 0
@@ -253,6 +275,8 @@ def main() -> int:
                 args.equity_output,
                 args.monthly_output,
                 args.signal_analysis_output,
+                args.trade_frequency_output,
+                args.reject_reasons_output,
                 args.charts,
                 args.max_charts,
             )
