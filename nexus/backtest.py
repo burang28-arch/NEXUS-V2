@@ -6,6 +6,8 @@ from typing import Any, Literal
 import numpy as np
 import pandas as pd
 
+from nexus.core.broker import BacktestBroker
+
 
 Side = Literal["LONG", "SHORT"]
 
@@ -64,12 +66,6 @@ class TradeRecord:
     candle_score: int
 
 
-def _apply_slippage(price: float, side: Side, is_entry: bool, slippage_rate: float) -> float:
-    if side == "LONG":
-        return price * (1 + slippage_rate if is_entry else 1 - slippage_rate)
-    return price * (1 - slippage_rate if is_entry else 1 + slippage_rate)
-
-
 def _pnl_for_fraction(position: Position, exit_price: float, fraction: float) -> float:
     qty = position.quantity * fraction
     if position.side == "LONG":
@@ -77,19 +73,15 @@ def _pnl_for_fraction(position: Position, exit_price: float, fraction: float) ->
     return (position.entry_price - exit_price) * qty
 
 
-def _fee(notional: float, fee_rate: float) -> float:
-    return notional * fee_rate
-
-
 def _close_fraction(
     position: Position,
     exit_price: float,
     fraction: float,
-    fee_rate: float,
+    broker: BacktestBroker,
 ) -> tuple[float, float]:
     gross = _pnl_for_fraction(position, exit_price, fraction)
     close_notional = abs(position.quantity * fraction * exit_price)
-    close_fee = _fee(close_notional, fee_rate)
+    close_fee = broker.fee(close_notional)
     position.realized_pnl += gross - close_fee
     position.remaining_fraction -= fraction
     return gross, close_fee
@@ -107,9 +99,8 @@ def _build_position(
     entry_index: int,
     equity: float,
     config: dict[str, Any],
+    broker: BacktestBroker,
 ) -> Position | None:
-    fee_rate = float(config["risk"]["fee_rate_pct"]) / 100.0
-    slippage_rate = float(config["risk"]["slippage_rate_pct"]) / 100.0
     leverage = float(config["risk"].get("leverage", 1.0))
     tp1_fraction = float(config["exit"]["tp1_fraction"])
 
@@ -121,7 +112,14 @@ def _build_position(
         return None
 
     raw_entry = float(entry_row["open"])
-    entry_price = _apply_slippage(raw_entry, side, True, slippage_rate)
+    margin_pct = _position_margin_pct(config, size_multiplier)
+    margin_used = equity * margin_pct / 100.0
+    notional = margin_used * leverage
+    if margin_used <= 0 or notional <= 0:
+        return None
+
+    entry_fill = broker.entry_fill(raw_entry, side, notional)
+    entry_price = entry_fill.price
 
     if side == "LONG":
         tp1_price = float(signal_row["bb_middle"])
@@ -134,14 +132,8 @@ def _build_position(
         if not (stop_price > entry_price and tp1_price < entry_price and tp2_price < entry_price):
             return None
 
-    margin_pct = _position_margin_pct(config, size_multiplier)
-    margin_used = equity * margin_pct / 100.0
-    notional = margin_used * leverage
-    if margin_used <= 0 or notional <= 0:
-        return None
-
     quantity = notional / entry_price
-    fee_open = _fee(notional, fee_rate)
+    fee_open = entry_fill.fee
 
     return Position(
         side=side,
@@ -210,13 +202,12 @@ def _process_position_bar(
     bar: pd.Series,
     signal_row: pd.Series,
     config: dict[str, Any],
+    broker: BacktestBroker,
 ) -> tuple[Position | None, TradeRecord | None]:
     """
     Conservative same-bar assumption:
     if stop and profit target are both touched in one candle, stop is processed first.
     """
-    fee_rate = float(config["risk"]["fee_rate_pct"]) / 100.0
-    slippage_rate = float(config["risk"]["slippage_rate_pct"]) / 100.0
     tp1_fraction = float(config["exit"]["tp1_fraction"])
     tp2_fraction = float(config["exit"]["tp2_fraction"])
 
@@ -225,9 +216,9 @@ def _process_position_bar(
 
     if position.side == "LONG":
         if float(bar["low"]) <= position.stop_price:
-            exit_price = _apply_slippage(position.stop_price, "LONG", False, slippage_rate)
+            exit_price = broker.exit_fill(position.stop_price, "LONG", position.quantity * position.remaining_fraction).price
             _, close_fee = _close_fraction(
-                position, exit_price, position.remaining_fraction, fee_rate
+                position, exit_price, position.remaining_fraction, broker
             )
             total_fees += close_fee
             trade = _finalize_trade(
@@ -236,15 +227,15 @@ def _process_position_bar(
             return None, trade
 
         if (not position.tp1_done) and float(bar["high"]) >= position.tp1_price:
-            exit_price = _apply_slippage(position.tp1_price, "LONG", False, slippage_rate)
-            _, close_fee = _close_fraction(position, exit_price, tp1_fraction, fee_rate)
+            exit_price = broker.exit_fill(position.tp1_price, "LONG", position.quantity * tp1_fraction).price
+            _, close_fee = _close_fraction(position, exit_price, tp1_fraction, broker)
             total_fees += close_fee
             position.tp1_done = True
 
         if position.tp1_done and float(bar["high"]) >= position.tp2_price:
-            exit_price = _apply_slippage(position.tp2_price, "LONG", False, slippage_rate)
+            exit_price = broker.exit_fill(position.tp2_price, "LONG", position.quantity * position.remaining_fraction).price
             _, close_fee = _close_fraction(
-                position, exit_price, position.remaining_fraction, fee_rate
+                position, exit_price, position.remaining_fraction, broker
             )
             total_fees += close_fee
             trade = _finalize_trade(
@@ -254,9 +245,9 @@ def _process_position_bar(
 
     else:
         if float(bar["high"]) >= position.stop_price:
-            exit_price = _apply_slippage(position.stop_price, "SHORT", False, slippage_rate)
+            exit_price = broker.exit_fill(position.stop_price, "SHORT", position.quantity * position.remaining_fraction).price
             _, close_fee = _close_fraction(
-                position, exit_price, position.remaining_fraction, fee_rate
+                position, exit_price, position.remaining_fraction, broker
             )
             total_fees += close_fee
             trade = _finalize_trade(
@@ -265,15 +256,15 @@ def _process_position_bar(
             return None, trade
 
         if (not position.tp1_done) and float(bar["low"]) <= position.tp1_price:
-            exit_price = _apply_slippage(position.tp1_price, "SHORT", False, slippage_rate)
-            _, close_fee = _close_fraction(position, exit_price, tp1_fraction, fee_rate)
+            exit_price = broker.exit_fill(position.tp1_price, "SHORT", position.quantity * tp1_fraction).price
+            _, close_fee = _close_fraction(position, exit_price, tp1_fraction, broker)
             total_fees += close_fee
             position.tp1_done = True
 
         if position.tp1_done and float(bar["low"]) <= position.tp2_price:
-            exit_price = _apply_slippage(position.tp2_price, "SHORT", False, slippage_rate)
+            exit_price = broker.exit_fill(position.tp2_price, "SHORT", position.quantity * position.remaining_fraction).price
             _, close_fee = _close_fraction(
-                position, exit_price, position.remaining_fraction, fee_rate
+                position, exit_price, position.remaining_fraction, broker
             )
             total_fees += close_fee
             trade = _finalize_trade(
@@ -290,6 +281,10 @@ def run_backtest(
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     equity = float(config["risk"]["initial_equity"])
     max_total_margin_pct = float(config["risk"].get("max_total_margin_pct", 6.0))
+    broker = BacktestBroker(
+        fee_rate_pct=float(config["risk"]["fee_rate_pct"]),
+        slippage_rate_pct=float(config["risk"]["slippage_rate_pct"]),
+    )
 
     long_position: Position | None = None
     short_position: Position | None = None
@@ -304,7 +299,7 @@ def run_backtest(
         if long_position is not None:
             sig = signal_rows[long_position.signal_index]
             long_position, trade = _process_position_bar(
-                long_position, bar, sig, config
+                long_position, bar, sig, config, broker
             )
             if trade is not None:
                 equity += trade.net_pnl
@@ -313,7 +308,7 @@ def run_backtest(
         if short_position is not None:
             sig = signal_rows[short_position.signal_index]
             short_position, trade = _process_position_bar(
-                short_position, bar, sig, config
+                short_position, bar, sig, config, broker
             )
             if trade is not None:
                 equity += trade.net_pnl
@@ -328,7 +323,7 @@ def run_backtest(
 
         if signal_row["signal"] == "LONG" and long_position is None:
             candidate = _build_position(
-                "LONG", signal_row, bar, i - 1, i, equity, config
+                "LONG", signal_row, bar, i - 1, i, equity, config, broker
             )
             if candidate is not None:
                 projected_pct = (used_margin + candidate.margin_used) / equity * 100.0
@@ -339,7 +334,7 @@ def run_backtest(
 
         if signal_row["signal"] == "SHORT" and short_position is None:
             candidate = _build_position(
-                "SHORT", signal_row, bar, i - 1, i, equity, config
+                "SHORT", signal_row, bar, i - 1, i, equity, config, broker
             )
             if candidate is not None:
                 projected_pct = (used_margin + candidate.margin_used) / equity * 100.0
@@ -358,18 +353,18 @@ def run_backtest(
 
     # Close any remaining positions at final close.
     final_bar = frame.iloc[-1]
-    fee_rate = float(config["risk"]["fee_rate_pct"]) / 100.0
-    slippage_rate = float(config["risk"]["slippage_rate_pct"]) / 100.0
 
     for position in [long_position, short_position]:
         if position is None:
             continue
         sig = signal_rows[position.signal_index]
-        exit_price = _apply_slippage(
-            float(final_bar["close"]), position.side, False, slippage_rate
-        )
+        exit_price = broker.exit_fill(
+            float(final_bar["close"]),
+            position.side,
+            position.quantity * position.remaining_fraction,
+        ).price
         _, close_fee = _close_fraction(
-            position, exit_price, position.remaining_fraction, fee_rate
+            position, exit_price, position.remaining_fraction, broker
         )
         total_fees = position.fee_open + close_fee
         trade = _finalize_trade(
