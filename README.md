@@ -1,51 +1,39 @@
-# NEXUS V2 — v2.0.1-dev14
+# NEXUS V2 — v2.0.1-dev15
 
-DEV14는 손절 계산값을 실제 숫자로 확인하는 디버그 CSV를 생성합니다.
+DEV15 changes risk and profit targets to configurable entry-based percentages.
 
-## 출력 파일
+## Current levels
 
-```text
-reports/stop_debug.csv
+- Stop Loss: 1.0%
+- TP1: 2.0%, close 70%
+- TP2: 4.0%, close remaining 30%
+
+LONG: entry -1%, +2%, +4%.
+SHORT: entry +1%, -2%, -4%.
+
+No value is hardcoded in the execution logic. Settings are in `config/strategy.yaml`:
+
+```yaml
+risk:
+  stop_loss_pct: 1.0
+exit:
+  tp1_pct: 2.0
+  tp2_pct: 4.0
+  tp1_fraction: 0.70
+  tp2_fraction: 0.30
 ```
 
-## 주요 열
-
-- side
-- next_open_raw
-- entry_after_slippage
-- signal_high
-- signal_low
-- swing_price
-- atr
-- atr_buffer
-- stop_price
-- stop_distance
-- is_valid
-- reason
-- swing_vs_entry
-- reference_vs_entry
-
-기본적으로 잘못된 후보부터 최대 200개를 저장합니다.
-
-## 실행
+## Verify
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
 .\.venv\Scripts\python.exe nexus.py backtest .\data\BTCUSDT_15M.csv
 ```
 
-더 많이 출력:
-
-```powershell
-.\.venv\Scripts\python.exe nexus.py backtest .\data\BTCUSDT_15M.csv --stop-debug-rows 1000
-```
-
-전략과 손절 계산 로직은 변경하지 않습니다.
-
-## 커밋
+## Commit
 
 ```powershell
 git add .
-git commit -m "feat: add stop calculation debug report"
+git commit -m "feat: use configurable fixed stop and profit targets"
 git push
 ```

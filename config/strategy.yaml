@@ -1,6 +1,6 @@
 project:
   name: NEXUS V2
-  version: 2.0.0-c
+  version: 2.0.1-dev15
   symbol: BTCUSDT
   timeframe: 15m
 
@@ -43,12 +43,12 @@ risk:
   position_mode: hedge
   max_long_positions: 1
   max_short_positions: 1
-  atr_stop_buffer: 0.2
+  stop_loss_pct: 1.0
   fee_rate_pct: 0.055
   slippage_rate_pct: 0.02
 
 exit:
   tp1_fraction: 0.70
   tp2_fraction: 0.30
-  tp1_target: bollinger_middle
-  tp2_target: opposite_band
+  tp1_pct: 2.0
+  tp2_pct: 4.0

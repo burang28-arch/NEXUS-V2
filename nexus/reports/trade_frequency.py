@@ -30,8 +30,6 @@ class TradeFrequencyAnalyzer:
             & frame["bb_lower"].notna()
             & frame["bb_upper"].notna()
             & frame["atr"].notna()
-            & frame["swing_low"].notna()
-            & frame["swing_high"].notna()
         )
 
         long_rsi = ready & (frame["rsi"] <= rsi_long_max)
@@ -130,28 +128,9 @@ class TradeFrequencyAnalyzer:
         setup: pd.Series,
         side: str,
     ) -> pd.Series:
-        next_open = frame["open"].shift(-1)
-
-        if side == "LONG":
-            valid = (
-                setup
-                & next_open.notna()
-                & frame["stop_price"].notna()
-                & (frame["stop_price"] < next_open)
-                & (frame["bb_middle"] > next_open)
-                & (frame["bb_upper"] > next_open)
-            )
-        else:
-            valid = (
-                setup
-                & next_open.notna()
-                & frame["stop_price"].notna()
-                & (frame["stop_price"] > next_open)
-                & (frame["bb_middle"] < next_open)
-                & (frame["bb_lower"] < next_open)
-            )
-
-        return valid
+        # Fixed percentage stops and targets are always on the correct side
+        # of a valid next-open entry.
+        return setup & frame["open"].shift(-1).notna()
 
     @staticmethod
     def _executed_count(trades: pd.DataFrame, side: str) -> int:
@@ -245,9 +224,6 @@ class TradeFrequencyAnalyzer:
             "bb_lower",
             "bb_middle",
             "bb_upper",
-            "swing_low",
-            "swing_high",
-            "stop_price",
         }
         missing = sorted(required.difference(frame.columns))
         if missing:

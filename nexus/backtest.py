@@ -80,15 +80,8 @@ def _build_position(
     broker: BacktestBroker,
 ) -> Position | None:
     leverage = float(config["risk"].get("leverage", 1.0))
-    tp1_fraction = float(config["exit"]["tp1_fraction"])
-
     score = int(signal_row["score"])
     size_multiplier = float(signal_row["size_multiplier"])
-    stop_price = float(signal_row["stop_price"])
-
-    if not np.isfinite(stop_price):
-        return None
-
     raw_entry = float(entry_row["open"])
     margin_pct = _position_margin_pct(config, size_multiplier)
     margin_used = equity * margin_pct / 100.0
@@ -99,16 +92,23 @@ def _build_position(
     entry_fill = broker.entry_fill(raw_entry, side, notional)
     entry_price = entry_fill.price
 
+    stop_loss_pct = float(config["risk"]["stop_loss_pct"]) / 100.0
+    tp1_pct = float(config["exit"]["tp1_pct"]) / 100.0
+    tp2_pct = float(config["exit"]["tp2_pct"]) / 100.0
+
+    if stop_loss_pct <= 0 or tp1_pct <= 0 or tp2_pct <= 0:
+        raise ValueError("Stop and take-profit percentages must be positive.")
+    if tp2_pct <= tp1_pct:
+        raise ValueError("tp2_pct must be greater than tp1_pct.")
+
     if side == "LONG":
-        tp1_price = float(signal_row["bb_middle"])
-        tp2_price = float(signal_row["bb_upper"])
-        if not (stop_price < entry_price and tp1_price > entry_price and tp2_price > entry_price):
-            return None
+        stop_price = entry_price * (1.0 - stop_loss_pct)
+        tp1_price = entry_price * (1.0 + tp1_pct)
+        tp2_price = entry_price * (1.0 + tp2_pct)
     else:
-        tp1_price = float(signal_row["bb_middle"])
-        tp2_price = float(signal_row["bb_lower"])
-        if not (stop_price > entry_price and tp1_price < entry_price and tp2_price < entry_price):
-            return None
+        stop_price = entry_price * (1.0 + stop_loss_pct)
+        tp1_price = entry_price * (1.0 - tp1_pct)
+        tp2_price = entry_price * (1.0 - tp2_pct)
 
     quantity = notional / entry_price
     fee_open = entry_fill.fee

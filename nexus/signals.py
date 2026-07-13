@@ -35,7 +35,6 @@ def add_signal_columns(
     adx_max = float(entry_cfg["adx_max"])
     rsi_long_max = float(entry_cfg["rsi_long_max"])
     rsi_short_min = float(entry_cfg["rsi_short_min"])
-    atr_buffer = float(risk_cfg["atr_stop_buffer"])
 
     components = _candle_components(result)
     body = components["body"]
@@ -130,13 +129,10 @@ def add_signal_columns(
         result["short_score"].map(size_map).where(result["short_setup"])
     )
 
-    result["long_stop"] = (
-        result["swing_low"] - result["atr"] * atr_buffer
-    ).where(result["long_setup"])
-
-    result["short_stop"] = (
-        result["swing_high"] + result["atr"] * atr_buffer
-    ).where(result["short_setup"])
+    # Actual stop and target prices depend on the next candle entry fill.
+    # They are calculated in the backtest engine from configurable percentages.
+    result["long_stop"] = np.nan
+    result["short_stop"] = np.nan
 
     result["signal"] = np.select(
         [result["long_setup"], result["short_setup"]],
