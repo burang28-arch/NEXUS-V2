@@ -7,20 +7,25 @@ import pandas as pd
 
 
 class StopAnalysis:
-    """Validate entry-based fixed percentage stop and target levels."""
+    """Validate entry-based fixed stop and single take-profit levels."""
 
     REASONS = ("valid", "no_next_open", "invalid_config")
 
     @classmethod
-    def prepare(cls, frame: pd.DataFrame, config: dict[str, Any]) -> pd.DataFrame:
+    def prepare(
+        cls,
+        frame: pd.DataFrame,
+        config: dict[str, Any],
+    ) -> pd.DataFrame:
         cls._validate_frame(frame)
+
         stop_pct = float(config["risk"]["stop_loss_pct"])
-        tp1_pct = float(config["exit"]["tp1_pct"])
-        tp2_pct = float(config["exit"]["tp2_pct"])
-        config_valid = stop_pct > 0 and tp1_pct > 0 and tp2_pct > tp1_pct
+        take_profit_pct = float(config["exit"]["take_profit_pct"])
+        config_valid = stop_pct > 0 and take_profit_pct > 0
 
         rows = []
         all_results = []
+
         for side, setup_col in (("LONG", "long_setup"), ("SHORT", "short_setup")):
             setup = frame[setup_col].fillna(False)
             next_open = frame["open"].shift(-1).loc[setup]
@@ -28,9 +33,15 @@ class StopAnalysis:
             results = results.mask(next_open.isna(), "no_next_open")
             if not config_valid:
                 results.loc[next_open.notna()] = "invalid_config"
+
             all_results.append(results.reset_index(drop=True))
             rows.extend(cls._summary_rows(side, results))
-        combined = pd.concat(all_results, ignore_index=True) if all_results else pd.Series(dtype="object")
+
+        combined = (
+            pd.concat(all_results, ignore_index=True)
+            if all_results
+            else pd.Series(dtype="object")
+        )
         rows.extend(cls._summary_rows("ALL", combined))
         return pd.DataFrame(rows)
 
@@ -44,16 +55,25 @@ class StopAnalysis:
     @classmethod
     def _summary_rows(cls, side, results):
         total = len(results)
-        return [{
-            "side": side,
-            "reason": reason,
-            "count": int((results == reason).sum()),
-            "share_of_side_setups_pct": (int((results == reason).sum()) / total * 100.0 if total else 0.0),
-        } for reason in cls.REASONS]
+        return [
+            {
+                "side": side,
+                "reason": reason,
+                "count": int((results == reason).sum()),
+                "share_of_side_setups_pct": (
+                    int((results == reason).sum()) / total * 100.0
+                    if total
+                    else 0.0
+                ),
+            }
+            for reason in cls.REASONS
+        ]
 
     @staticmethod
     def _validate_frame(frame):
         required = {"open", "long_setup", "short_setup"}
         missing = sorted(required.difference(frame.columns))
         if missing:
-            raise ValueError("Stop analysis is missing columns: " + ", ".join(missing))
+            raise ValueError(
+                "Stop analysis is missing columns: " + ", ".join(missing)
+            )

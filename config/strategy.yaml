@@ -1,6 +1,6 @@
 project:
   name: NEXUS V2
-  version: 2.0.1-dev15
+  version: 2.0.1-dev16
   symbol: BTCUSDT
   timeframe: 15m
 
@@ -48,7 +48,4 @@ risk:
   slippage_rate_pct: 0.02
 
 exit:
-  tp1_fraction: 0.70
-  tp2_fraction: 0.30
-  tp1_pct: 2.0
-  tp2_pct: 4.0
+  take_profit_pct: 2.2

@@ -93,22 +93,21 @@ def _build_position(
     entry_price = entry_fill.price
 
     stop_loss_pct = float(config["risk"]["stop_loss_pct"]) / 100.0
-    tp1_pct = float(config["exit"]["tp1_pct"]) / 100.0
-    tp2_pct = float(config["exit"]["tp2_pct"]) / 100.0
+    take_profit_pct = float(config["exit"]["take_profit_pct"]) / 100.0
 
-    if stop_loss_pct <= 0 or tp1_pct <= 0 or tp2_pct <= 0:
-        raise ValueError("Stop and take-profit percentages must be positive.")
-    if tp2_pct <= tp1_pct:
-        raise ValueError("tp2_pct must be greater than tp1_pct.")
+    if stop_loss_pct <= 0 or take_profit_pct <= 0:
+        raise ValueError("Stop-loss and take-profit percentages must be positive.")
 
     if side == "LONG":
         stop_price = entry_price * (1.0 - stop_loss_pct)
-        tp1_price = entry_price * (1.0 + tp1_pct)
-        tp2_price = entry_price * (1.0 + tp2_pct)
+        take_profit_price = entry_price * (1.0 + take_profit_pct)
     else:
         stop_price = entry_price * (1.0 + stop_loss_pct)
-        tp1_price = entry_price * (1.0 - tp1_pct)
-        tp2_price = entry_price * (1.0 - tp2_pct)
+        take_profit_price = entry_price * (1.0 - take_profit_pct)
+
+    # Keep both legacy fields equal for report compatibility.
+    tp1_price = take_profit_price
+    tp2_price = take_profit_price
 
     quantity = notional / entry_price
     fee_open = entry_fill.fee
@@ -184,69 +183,102 @@ def _process_position_bar(
 ) -> tuple[Position | None, TradeRecord | None]:
     """
     Conservative same-bar assumption:
-    if stop and profit target are both touched in one candle, stop is processed first.
+    if stop and take profit are both touched in one candle, stop is processed first.
     """
-    tp1_fraction = float(config["exit"]["tp1_fraction"])
-    tp2_fraction = float(config["exit"]["tp2_fraction"])
-
     position.holding_bars += 1
     total_fees = position.fee_open
 
     if position.side == "LONG":
         if float(bar["low"]) <= position.stop_price:
-            exit_price = broker.exit_fill(position.stop_price, "LONG", position.quantity * position.remaining_fraction).price
+            exit_price = broker.exit_fill(
+                position.stop_price,
+                "LONG",
+                position.quantity * position.remaining_fraction,
+            ).price
             _, close_fee = _close_fraction(
-                position, exit_price, position.remaining_fraction, broker
+                position,
+                exit_price,
+                position.remaining_fraction,
+                broker,
             )
             total_fees += close_fee
             trade = _finalize_trade(
-                position, signal_row, bar["timestamp"], exit_price, "STOP", total_fees
+                position,
+                signal_row,
+                bar["timestamp"],
+                exit_price,
+                "STOP",
+                total_fees,
             )
             return None, trade
 
-        if (not position.tp1_done) and float(bar["high"]) >= position.tp1_price:
-            exit_price = broker.exit_fill(position.tp1_price, "LONG", position.quantity * tp1_fraction).price
-            _, close_fee = _close_fraction(position, exit_price, tp1_fraction, broker)
-            total_fees += close_fee
-            position.mark_tp1_done()
-
-        if position.tp1_done and float(bar["high"]) >= position.tp2_price:
-            exit_price = broker.exit_fill(position.tp2_price, "LONG", position.quantity * position.remaining_fraction).price
+        if float(bar["high"]) >= position.tp1_price:
+            exit_price = broker.exit_fill(
+                position.tp1_price,
+                "LONG",
+                position.quantity * position.remaining_fraction,
+            ).price
             _, close_fee = _close_fraction(
-                position, exit_price, position.remaining_fraction, broker
+                position,
+                exit_price,
+                position.remaining_fraction,
+                broker,
             )
             total_fees += close_fee
             trade = _finalize_trade(
-                position, signal_row, bar["timestamp"], exit_price, "TP2", total_fees
+                position,
+                signal_row,
+                bar["timestamp"],
+                exit_price,
+                "TAKE_PROFIT",
+                total_fees,
             )
             return None, trade
 
     else:
         if float(bar["high"]) >= position.stop_price:
-            exit_price = broker.exit_fill(position.stop_price, "SHORT", position.quantity * position.remaining_fraction).price
+            exit_price = broker.exit_fill(
+                position.stop_price,
+                "SHORT",
+                position.quantity * position.remaining_fraction,
+            ).price
             _, close_fee = _close_fraction(
-                position, exit_price, position.remaining_fraction, broker
+                position,
+                exit_price,
+                position.remaining_fraction,
+                broker,
             )
             total_fees += close_fee
             trade = _finalize_trade(
-                position, signal_row, bar["timestamp"], exit_price, "STOP", total_fees
+                position,
+                signal_row,
+                bar["timestamp"],
+                exit_price,
+                "STOP",
+                total_fees,
             )
             return None, trade
 
-        if (not position.tp1_done) and float(bar["low"]) <= position.tp1_price:
-            exit_price = broker.exit_fill(position.tp1_price, "SHORT", position.quantity * tp1_fraction).price
-            _, close_fee = _close_fraction(position, exit_price, tp1_fraction, broker)
-            total_fees += close_fee
-            position.mark_tp1_done()
-
-        if position.tp1_done and float(bar["low"]) <= position.tp2_price:
-            exit_price = broker.exit_fill(position.tp2_price, "SHORT", position.quantity * position.remaining_fraction).price
+        if float(bar["low"]) <= position.tp1_price:
+            exit_price = broker.exit_fill(
+                position.tp1_price,
+                "SHORT",
+                position.quantity * position.remaining_fraction,
+            ).price
             _, close_fee = _close_fraction(
-                position, exit_price, position.remaining_fraction, broker
+                position,
+                exit_price,
+                position.remaining_fraction,
+                broker,
             )
             total_fees += close_fee
             trade = _finalize_trade(
-                position, signal_row, bar["timestamp"], exit_price, "TP2", total_fees
+                position,
+                signal_row,
+                bar["timestamp"],
+                exit_price,
+                "TAKE_PROFIT",
+                total_fees,
             )
             return None, trade
 
