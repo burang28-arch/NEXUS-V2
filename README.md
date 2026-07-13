@@ -1,21 +1,24 @@
-# NEXUS V2 — v2.0.1-dev2
+# NEXUS V2 — v2.0.1-dev3
 
-DEV2는 Broker 연결만 수행합니다.
+DEV3는 기존 백테스트가 `nexus/core/position.py`의 `Position`을 실제로 사용하도록 연결한 작은 리팩터링입니다.
 
-## 변경 사항
+## 변경 범위
 
-- `nexus/backtest.py`의 수수료 및 슬리피지 계산을 `nexus/core/broker.py`의 `BacktestBroker`로 연결
-- 전략, Position 구조, Portfolio, 청산 규칙은 변경하지 않음
-- 목표: 기존 백테스트 결과와 완전히 동일
+- `nexus/backtest.py` 내부의 중복 `Position` 클래스 제거
+- `nexus.core.position.Position` import
+- 부분 청산 시 `Position.reduce()` 사용
+- TP1 완료 시 `Position.mark_tp1_done()` 사용
 
-## 테스트
+Broker, TradeRecord, Portfolio, 전략 조건은 건드리지 않았습니다.
+
+## 검증
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
 .\.venv\Scripts\python.exe nexus.py backtest .\data\BTCUSDT_15M.csv
 ```
 
-기준 결과:
+통과 기준:
 
 ```text
 Trades: 277
@@ -28,6 +31,6 @@ Net profit: -5.21
 
 ```powershell
 git add .
-git commit -m "refactor: route backtest fills through broker"
+git commit -m "refactor: use core Position in backtest"
 git push
 ```

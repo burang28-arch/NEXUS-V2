@@ -7,34 +7,10 @@ import numpy as np
 import pandas as pd
 
 from nexus.core.broker import BacktestBroker
+from nexus.core.position import Position
 
 
 Side = Literal["LONG", "SHORT"]
-
-
-@dataclass
-class Position:
-    side: Side
-    signal_index: int
-    entry_index: int
-    entry_time: pd.Timestamp
-    entry_price: float
-    stop_price: float
-    tp1_price: float
-    tp2_price: float
-    score: int
-    size_multiplier: float
-    margin_used: float
-    notional: float
-    quantity: float
-    fee_open: float
-    remaining_fraction: float = 1.0
-    tp1_done: bool = False
-    realized_pnl: float = 0.0
-    exit_reason: str = ""
-    exit_time: pd.Timestamp | None = None
-    exit_price: float | None = None
-    holding_bars: int = 0
 
 
 @dataclass
@@ -83,7 +59,7 @@ def _close_fraction(
     close_notional = abs(position.quantity * fraction * exit_price)
     close_fee = broker.fee(close_notional)
     position.realized_pnl += gross - close_fee
-    position.remaining_fraction -= fraction
+    position.reduce(fraction)
     return gross, close_fee
 
 
@@ -230,7 +206,7 @@ def _process_position_bar(
             exit_price = broker.exit_fill(position.tp1_price, "LONG", position.quantity * tp1_fraction).price
             _, close_fee = _close_fraction(position, exit_price, tp1_fraction, broker)
             total_fees += close_fee
-            position.tp1_done = True
+            position.mark_tp1_done()
 
         if position.tp1_done and float(bar["high"]) >= position.tp2_price:
             exit_price = broker.exit_fill(position.tp2_price, "LONG", position.quantity * position.remaining_fraction).price
@@ -259,7 +235,7 @@ def _process_position_bar(
             exit_price = broker.exit_fill(position.tp1_price, "SHORT", position.quantity * tp1_fraction).price
             _, close_fee = _close_fraction(position, exit_price, tp1_fraction, broker)
             total_fees += close_fee
-            position.tp1_done = True
+            position.mark_tp1_done()
 
         if position.tp1_done and float(bar["low"]) <= position.tp2_price:
             exit_price = broker.exit_fill(position.tp2_price, "SHORT", position.quantity * position.remaining_fraction).price
