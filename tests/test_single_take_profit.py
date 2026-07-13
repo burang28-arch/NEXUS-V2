@@ -7,12 +7,12 @@ from nexus.core.broker import BacktestBroker
 def config():
     return {
         "risk": {
-            "base_margin_pct": 2.0,
-            "leverage": 1.0,
+            "base_margin_pct": 3.0,
+            "leverage": 30.0,
             "stop_loss_pct": 1.0,
         },
         "exit": {
-            "take_profit_pct": 2.2,
+            "take_profit_pct": 1.5,
         },
     }
 
@@ -38,17 +38,13 @@ def test_take_profit_closes_full_long_position():
     position = _build_position(
         "LONG",
         signal_row(),
-        pd.Series(
-            {
-                "open": 100.0,
-                "timestamp": pd.Timestamp("2026-01-01 00:15", tz="UTC"),
-            }
-        ),
+        pd.Timestamp("2026-01-01 00:15", tz="UTC"),
         0,
         1,
         1000.0,
         config(),
         broker,
+        100.0,
     )
 
     updated, trade = _process_position_bar(
@@ -56,7 +52,7 @@ def test_take_profit_closes_full_long_position():
         pd.Series(
             {
                 "timestamp": pd.Timestamp("2026-01-01 00:30", tz="UTC"),
-                "high": 102.2,
+                "high": 101.5,
                 "low": 100.0,
             }
         ),

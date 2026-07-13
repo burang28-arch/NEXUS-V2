@@ -7,7 +7,7 @@ import pandas as pd
 
 
 class StopDebugReport:
-    """Export entry-based fixed stop and single take-profit calculations."""
+    """Export fixed stop/target calculations for limit-entry candidates."""
 
     @classmethod
     def prepare(
@@ -18,41 +18,49 @@ class StopDebugReport:
     ) -> pd.DataFrame:
         cls._validate_frame(frame)
 
-        slip = float(config["risk"]["slippage_rate_pct"]) / 100.0
+        offset = float(config["entry"]["limit_offset_pct"]) / 100.0
+        expiry = int(config["entry"]["limit_expiry_bars"])
         stop_pct = float(config["risk"]["stop_loss_pct"]) / 100.0
         take_profit_pct = float(config["exit"]["take_profit_pct"]) / 100.0
 
         rows = []
         for side, setup_col in (("LONG", "long_setup"), ("SHORT", "short_setup")):
             for index in frame.index[frame[setup_col].fillna(False)]:
-                if index + 1 >= len(frame):
+                first_bar = index + 1
+                if first_bar >= len(frame):
                     continue
 
-                raw = float(frame.iloc[index + 1]["open"])
-                entry = raw * (1 + slip if side == "LONG" else 1 - slip)
+                reference_open = float(frame.iloc[first_bar]["open"])
+                limit_price = (
+                    reference_open * (1.0 - offset)
+                    if side == "LONG"
+                    else reference_open * (1.0 + offset)
+                )
+                end_bar = min(len(frame), first_bar + expiry)
+                window = frame.iloc[first_bar:end_bar]
 
                 if side == "LONG":
-                    stop = entry * (1 - stop_pct)
-                    take_profit = entry * (1 + take_profit_pct)
-                    is_valid = stop < entry < take_profit
+                    fillable = bool((window["low"] <= limit_price).any())
+                    stop = limit_price * (1.0 - stop_pct)
+                    take_profit = limit_price * (1.0 + take_profit_pct)
                 else:
-                    stop = entry * (1 + stop_pct)
-                    take_profit = entry * (1 - take_profit_pct)
-                    is_valid = stop > entry > take_profit
+                    fillable = bool((window["high"] >= limit_price).any())
+                    stop = limit_price * (1.0 + stop_pct)
+                    take_profit = limit_price * (1.0 - take_profit_pct)
 
                 rows.append(
                     {
                         "timestamp": frame.loc[index, "timestamp"],
                         "side": side,
-                        "next_open_raw": raw,
-                        "entry_after_slippage": entry,
-                        "stop_loss_pct": stop_pct * 100,
-                        "take_profit_pct": take_profit_pct * 100,
+                        "reference_next_open": reference_open,
+                        "limit_offset_pct": offset * 100.0,
+                        "limit_price": limit_price,
+                        "limit_expiry_bars": expiry,
+                        "fillable_within_expiry": fillable,
+                        "stop_loss_pct": stop_pct * 100.0,
+                        "take_profit_pct": take_profit_pct * 100.0,
                         "stop_price": stop,
                         "take_profit_price": take_profit,
-                        "stop_distance": abs(entry - stop),
-                        "take_profit_distance": abs(take_profit - entry),
-                        "is_valid": is_valid,
                     }
                 )
 
@@ -68,7 +76,14 @@ class StopDebugReport:
 
     @staticmethod
     def _validate_frame(frame):
-        required = {"timestamp", "open", "long_setup", "short_setup"}
+        required = {
+            "timestamp",
+            "open",
+            "high",
+            "low",
+            "long_setup",
+            "short_setup",
+        }
         missing = sorted(required.difference(frame.columns))
         if missing:
             raise ValueError(

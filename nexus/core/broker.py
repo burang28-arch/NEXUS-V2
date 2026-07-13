@@ -34,6 +34,26 @@ class BacktestBroker:
             price = raw_price * (1.0 - self.slippage_rate)
         return Fill(price=price, notional=notional, fee=self.fee(notional))
 
+    def limit_entry_fill(
+        self,
+        fill_price: float,
+        side: Side,
+        notional: float,
+    ) -> Fill:
+        """
+        Fill a touched limit order at the supplied price.
+
+        The caller may pass the limit price or a better opening price when the
+        candle gaps through the limit. No additional adverse slippage is added
+        to a limit entry.
+        """
+        self._validate(fill_price, notional)
+        return Fill(
+            price=fill_price,
+            notional=notional,
+            fee=self.fee(notional),
+        )
+
     def exit_fill(
         self,
         raw_price: float,

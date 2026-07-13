@@ -44,6 +44,16 @@ class TradeRecord:
     candle_score: int
 
 
+@dataclass
+class PendingLimitOrder:
+    side: Side
+    signal_index: int
+    created_index: int
+    reference_open: float
+    limit_price: float
+    bars_remaining: int
+
+
 def _pnl_for_fraction(position: Position, exit_price: float, fraction: float) -> float:
     qty = position.quantity * fraction
     if position.side == "LONG":
@@ -72,24 +82,24 @@ def _position_margin_pct(config: dict[str, Any], size_multiplier: float) -> floa
 def _build_position(
     side: Side,
     signal_row: pd.Series,
-    entry_row: pd.Series,
+    entry_time: pd.Timestamp,
     signal_index: int,
     entry_index: int,
     equity: float,
     config: dict[str, Any],
     broker: BacktestBroker,
+    fill_price: float,
 ) -> Position | None:
     leverage = float(config["risk"].get("leverage", 1.0))
     score = int(signal_row["score"])
     size_multiplier = float(signal_row["size_multiplier"])
-    raw_entry = float(entry_row["open"])
     margin_pct = _position_margin_pct(config, size_multiplier)
     margin_used = equity * margin_pct / 100.0
     notional = margin_used * leverage
     if margin_used <= 0 or notional <= 0:
         return None
 
-    entry_fill = broker.entry_fill(raw_entry, side, notional)
+    entry_fill = broker.limit_entry_fill(fill_price, side, notional)
     entry_price = entry_fill.price
 
     stop_loss_pct = float(config["risk"]["stop_loss_pct"]) / 100.0
@@ -105,10 +115,6 @@ def _build_position(
         stop_price = entry_price * (1.0 + stop_loss_pct)
         take_profit_price = entry_price * (1.0 - take_profit_pct)
 
-    # Keep both legacy fields equal for report compatibility.
-    tp1_price = take_profit_price
-    tp2_price = take_profit_price
-
     quantity = notional / entry_price
     fee_open = entry_fill.fee
 
@@ -116,11 +122,11 @@ def _build_position(
         side=side,
         signal_index=signal_index,
         entry_index=entry_index,
-        entry_time=entry_row["timestamp"],
+        entry_time=entry_time,
         entry_price=entry_price,
         stop_price=stop_price,
-        tp1_price=tp1_price,
-        tp2_price=tp2_price,
+        tp1_price=take_profit_price,
+        tp2_price=take_profit_price,
         score=score,
         size_multiplier=size_multiplier,
         margin_used=margin_used,
@@ -285,12 +291,126 @@ def _process_position_bar(
     return position, None
 
 
+
+def _create_pending_limit_order(
+    side: Side,
+    signal_row: pd.Series,
+    signal_index: int,
+    reference_bar: pd.Series,
+    config: dict[str, Any],
+) -> PendingLimitOrder:
+    offset_pct = float(config["entry"]["limit_offset_pct"]) / 100.0
+    expiry_bars = int(config["entry"]["limit_expiry_bars"])
+
+    if offset_pct < 0:
+        raise ValueError("limit_offset_pct cannot be negative.")
+    if expiry_bars < 1:
+        raise ValueError("limit_expiry_bars must be at least 1.")
+
+    reference_open = float(reference_bar["open"])
+    if side == "LONG":
+        limit_price = reference_open * (1.0 - offset_pct)
+    else:
+        limit_price = reference_open * (1.0 + offset_pct)
+
+    return PendingLimitOrder(
+        side=side,
+        signal_index=signal_index,
+        created_index=int(reference_bar.name),
+        reference_open=reference_open,
+        limit_price=limit_price,
+        bars_remaining=expiry_bars,
+    )
+
+
+def _limit_fill_price(
+    order: PendingLimitOrder,
+    bar: pd.Series,
+) -> tuple[float | None, bool]:
+    """
+    Return (fill_price, filled_at_open).
+
+    A gap through the limit receives the better opening price. Otherwise a
+    touched order fills at its limit price.
+    """
+    bar_open = float(bar["open"])
+    if order.side == "LONG":
+        if bar_open <= order.limit_price:
+            return bar_open, True
+        if float(bar["low"]) <= order.limit_price:
+            return order.limit_price, False
+    else:
+        if bar_open >= order.limit_price:
+            return bar_open, True
+        if float(bar["high"]) >= order.limit_price:
+            return order.limit_price, False
+
+    return None, False
+
+
+def _process_newly_filled_position(
+    position: Position,
+    bar: pd.Series,
+    signal_row: pd.Series,
+    config: dict[str, Any],
+    broker: BacktestBroker,
+    filled_at_open: bool,
+) -> tuple[Position | None, TradeRecord | None]:
+    """
+    When filled at the candle open, use the normal stop-first candle rule.
+
+    For an intrabar limit touch, candle order is unknown. Conservatively allow
+    a same-bar stop, but do not award a same-bar take profit that may have
+    occurred before the limit was filled.
+    """
+    if filled_at_open:
+        return _process_position_bar(position, bar, signal_row, config, broker)
+
+    position.holding_bars += 1
+    total_fees = position.fee_open
+
+    stop_hit = (
+        float(bar["low"]) <= position.stop_price
+        if position.side == "LONG"
+        else float(bar["high"]) >= position.stop_price
+    )
+    if not stop_hit:
+        return position, None
+
+    exit_price = broker.exit_fill(
+        position.stop_price,
+        position.side,
+        position.quantity * position.remaining_fraction,
+    ).price
+    _, close_fee = _close_fraction(
+        position,
+        exit_price,
+        position.remaining_fraction,
+        broker,
+    )
+    total_fees += close_fee
+    trade = _finalize_trade(
+        position,
+        signal_row,
+        bar["timestamp"],
+        exit_price,
+        "STOP",
+        total_fees,
+    )
+    return None, trade
+
+
+
 def run_backtest(
     frame: pd.DataFrame,
     config: dict[str, Any],
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     initial_equity = float(config["risk"]["initial_equity"])
     max_total_margin_pct = float(config["risk"].get("max_total_margin_pct", 6.0))
+    order_type = str(config["entry"].get("order_type", "limit")).lower()
+    if order_type != "limit":
+        raise ValueError("DEV18 supports entry.order_type=limit.")
+
     broker = BacktestBroker(
         fee_rate_pct=float(config["risk"]["fee_rate_pct"]),
         slippage_rate_pct=float(config["risk"]["slippage_rate_pct"]),
@@ -300,60 +420,167 @@ def run_backtest(
     records: list[TradeRecord] = []
     equity_curve: list[dict[str, Any]] = []
     signal_rows: dict[int, pd.Series] = {}
+    pending_orders: dict[Side, PendingLimitOrder | None] = {
+        "LONG": None,
+        "SHORT": None,
+    }
 
     for i in range(1, len(frame)):
         bar = frame.iloc[i]
 
-        long_position = portfolio.long_position
-        if long_position is not None:
-            sig = signal_rows[long_position.signal_index]
-            updated_position, trade = _process_position_bar(
-                long_position, bar, sig, config, broker
-            )
-            if trade is not None:
-                portfolio.close_position("LONG", trade.net_pnl)
-                records.append(trade)
-            else:
-                portfolio.long_position = updated_position
+        # Existing positions are processed first.
+        for side in ("LONG", "SHORT"):
+            position = portfolio.get_position(side)
+            if position is None:
+                continue
 
-        short_position = portfolio.short_position
-        if short_position is not None:
-            sig = signal_rows[short_position.signal_index]
+            sig = signal_rows[position.signal_index]
             updated_position, trade = _process_position_bar(
-                short_position, bar, sig, config, broker
+                position,
+                bar,
+                sig,
+                config,
+                broker,
             )
             if trade is not None:
-                portfolio.close_position("SHORT", trade.net_pnl)
+                portfolio.close_position(side, trade.net_pnl)
                 records.append(trade)
+            elif side == "LONG":
+                portfolio.long_position = updated_position
             else:
                 portfolio.short_position = updated_position
 
+        # Existing pending orders get the first chance to fill on this bar.
+        had_pending = {
+            side: pending_orders[side] is not None
+            for side in ("LONG", "SHORT")
+        }
+
+        for side in ("LONG", "SHORT"):
+            order = pending_orders[side]
+            if order is None:
+                continue
+
+            # A pending order is cancelled if a same-side position somehow
+            # became active before its fill.
+            if portfolio.has_open_position(side):
+                pending_orders[side] = None
+                continue
+
+            fill_price, filled_at_open = _limit_fill_price(order, bar)
+            if fill_price is None:
+                order.bars_remaining -= 1
+                if order.bars_remaining <= 0:
+                    pending_orders[side] = None
+                continue
+
+            equity = portfolio.account.equity
+            signal_row = signal_rows[order.signal_index]
+            candidate = _build_position(
+                side,
+                signal_row,
+                bar["timestamp"],
+                order.signal_index,
+                i,
+                equity,
+                config,
+                broker,
+                fill_price,
+            )
+            pending_orders[side] = None
+            if candidate is None:
+                continue
+
+            projected_pct = (
+                (portfolio.used_margin + candidate.margin_used)
+                / equity
+                * 100.0
+            )
+            if projected_pct > max_total_margin_pct:
+                continue
+
+            portfolio.open_position(candidate)
+            updated_position, trade = _process_newly_filled_position(
+                candidate,
+                bar,
+                signal_row,
+                config,
+                broker,
+                filled_at_open,
+            )
+            if trade is not None:
+                portfolio.close_position(side, trade.net_pnl)
+                records.append(trade)
+            elif side == "LONG":
+                portfolio.long_position = updated_position
+            else:
+                portfolio.short_position = updated_position
+
+        # A signal from the completed previous candle places a fresh limit
+        # order using this candle's opening price as the reference.
         signal_row = frame.iloc[i - 1]
-        equity = portfolio.account.equity
+        signal_side = str(signal_row["signal"])
 
-        if signal_row["signal"] == "LONG" and not portfolio.has_open_position("LONG"):
-            candidate = _build_position(
-                "LONG", signal_row, bar, i - 1, i, equity, config, broker
-            )
-            if candidate is not None:
-                projected_pct = (
-                    (portfolio.used_margin + candidate.margin_used) / equity * 100.0
+        if signal_side in ("LONG", "SHORT"):
+            side = signal_side
+            if (
+                not had_pending[side]
+                and pending_orders[side] is None
+                and not portfolio.has_open_position(side)
+            ):
+                order = _create_pending_limit_order(
+                    side,
+                    signal_row,
+                    i - 1,
+                    bar,
+                    config,
                 )
-                if projected_pct <= max_total_margin_pct:
-                    portfolio.open_position(candidate)
-                    signal_rows[i - 1] = signal_row
+                signal_rows[i - 1] = signal_row
+                pending_orders[side] = order
 
-        if signal_row["signal"] == "SHORT" and not portfolio.has_open_position("SHORT"):
-            candidate = _build_position(
-                "SHORT", signal_row, bar, i - 1, i, equity, config, broker
-            )
-            if candidate is not None:
-                projected_pct = (
-                    (portfolio.used_margin + candidate.margin_used) / equity * 100.0
-                )
-                if projected_pct <= max_total_margin_pct:
-                    portfolio.open_position(candidate)
-                    signal_rows[i - 1] = signal_row
+                fill_price, filled_at_open = _limit_fill_price(order, bar)
+                if fill_price is not None:
+                    equity = portfolio.account.equity
+                    candidate = _build_position(
+                        side,
+                        signal_row,
+                        bar["timestamp"],
+                        i - 1,
+                        i,
+                        equity,
+                        config,
+                        broker,
+                        fill_price,
+                    )
+                    pending_orders[side] = None
+
+                    if candidate is not None:
+                        projected_pct = (
+                            (portfolio.used_margin + candidate.margin_used)
+                            / equity
+                            * 100.0
+                        )
+                        if projected_pct <= max_total_margin_pct:
+                            portfolio.open_position(candidate)
+                            updated_position, trade = _process_newly_filled_position(
+                                candidate,
+                                bar,
+                                signal_row,
+                                config,
+                                broker,
+                                filled_at_open,
+                            )
+                            if trade is not None:
+                                portfolio.close_position(side, trade.net_pnl)
+                                records.append(trade)
+                            elif side == "LONG":
+                                portfolio.long_position = updated_position
+                            else:
+                                portfolio.short_position = updated_position
+                else:
+                    order.bars_remaining -= 1
+                    if order.bars_remaining <= 0:
+                        pending_orders[side] = None
 
         equity_curve.append(
             {
@@ -361,6 +588,8 @@ def run_backtest(
                 "equity": portfolio.account.equity,
                 "long_open": int(portfolio.has_open_position("LONG")),
                 "short_open": int(portfolio.has_open_position("SHORT")),
+                "long_limit_pending": int(pending_orders["LONG"] is not None),
+                "short_limit_pending": int(pending_orders["SHORT"] is not None),
             }
         )
 
@@ -378,7 +607,10 @@ def run_backtest(
             position.quantity * position.remaining_fraction,
         ).price
         _, close_fee = _close_fraction(
-            position, exit_price, position.remaining_fraction, broker
+            position,
+            exit_price,
+            position.remaining_fraction,
+            broker,
         )
         total_fees = position.fee_open + close_fee
         trade = _finalize_trade(

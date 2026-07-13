@@ -43,6 +43,8 @@ class TradeFrequencyAnalyzer:
 
         long_valid = cls._valid_next_open_candidate(frame, long_band, "LONG")
         short_valid = cls._valid_next_open_candidate(frame, short_band, "SHORT")
+        long_limit_filled = cls._limit_fillable(frame, long_valid, "LONG", config)
+        short_limit_filled = cls._limit_fillable(frame, short_valid, "SHORT", config)
 
         executed_long = cls._executed_count(trades, "LONG")
         executed_short = cls._executed_count(trades, "SHORT")
@@ -54,6 +56,11 @@ class TradeFrequencyAnalyzer:
             ("adx_pass", int(long_adx.sum()), int(short_adx.sum())),
             ("bollinger_touch", int(long_band.sum()), int(short_band.sum())),
             ("valid_stop_and_targets", int(long_valid.sum()), int(short_valid.sum())),
+            (
+                "limit_filled_within_expiry",
+                int(long_limit_filled.sum()),
+                int(short_limit_filled.sum()),
+            ),
             ("executed_trades", executed_long, executed_short),
         ]
 
@@ -95,6 +102,8 @@ class TradeFrequencyAnalyzer:
             short_band=short_band,
             long_valid=long_valid,
             short_valid=short_valid,
+            long_limit_filled=long_limit_filled,
+            short_limit_filled=short_limit_filled,
             executed_long=executed_long,
             executed_short=executed_short,
         )
@@ -133,6 +142,38 @@ class TradeFrequencyAnalyzer:
         return setup & frame["open"].shift(-1).notna()
 
     @staticmethod
+    def _limit_fillable(
+        frame: pd.DataFrame,
+        setup: pd.Series,
+        side: str,
+        config: dict[str, Any],
+    ) -> pd.Series:
+        offset = float(config["entry"].get("limit_offset_pct", 0.3)) / 100.0
+        expiry = int(config["entry"].get("limit_expiry_bars", 2))
+        result = pd.Series(False, index=frame.index)
+
+        for index in frame.index[setup]:
+            first_bar = index + 1
+            if first_bar >= len(frame):
+                continue
+
+            reference_open = float(frame.iloc[first_bar]["open"])
+            limit_price = (
+                reference_open * (1.0 - offset)
+                if side == "LONG"
+                else reference_open * (1.0 + offset)
+            )
+            end_bar = min(len(frame), first_bar + expiry)
+            window = frame.iloc[first_bar:end_bar]
+
+            if side == "LONG":
+                result.loc[index] = bool((window["low"] <= limit_price).any())
+            else:
+                result.loc[index] = bool((window["high"] >= limit_price).any())
+
+        return result
+
+    @staticmethod
     def _executed_count(trades: pd.DataFrame, side: str) -> int:
         if trades.empty or "side" not in trades.columns:
             return 0
@@ -151,6 +192,8 @@ class TradeFrequencyAnalyzer:
         short_band: pd.Series,
         long_valid: pd.Series,
         short_valid: pd.Series,
+        long_limit_filled: pd.Series,
+        short_limit_filled: pd.Series,
         executed_long: int,
         executed_short: int,
     ) -> list[dict[str, float | int | str]]:
@@ -183,9 +226,14 @@ class TradeFrequencyAnalyzer:
                 int((short_band & ~short_valid).sum()),
             ),
             (
+                "limit_not_filled_within_expiry",
+                int((long_valid & ~long_limit_filled).sum()),
+                int((short_valid & ~short_limit_filled).sum()),
+            ),
+            (
                 "position_open_or_margin_limit",
-                max(0, int(long_valid.sum()) - executed_long),
-                max(0, int(short_valid.sum()) - executed_short),
+                max(0, int(long_limit_filled.sum()) - executed_long),
+                max(0, int(short_limit_filled.sum()) - executed_short),
             ),
         ]
 

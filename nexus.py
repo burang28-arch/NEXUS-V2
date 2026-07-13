@@ -133,7 +133,7 @@ def run_inspect(csv_path: Path, config_path: Path, tail: int) -> int:
         "volume_ma", "swing_low", "swing_high", "signal", "score",
         "size_multiplier", "stop_price",
     ]
-    print("NEXUS V2 v2.0.1-dev15")
+    print("NEXUS V2 v2.0.1-dev18")
     print(frame[cols].tail(max(1, tail)).to_string(index=False))
     return 0
 
@@ -149,7 +149,7 @@ def run_signals(csv_path: Path, config_path: Path, output_path: Path) -> int:
         .groupby("month")
         .size()
     )
-    print("NEXUS V2 v2.0.1-dev15")
+    print("NEXUS V2 v2.0.1-dev18")
     print(f"- Total signals: {len(signals):,}")
     print(f"- Long signals:  {(signals['signal'] == 'LONG').sum():,}")
     print(f"- Short signals: {(signals['signal'] == 'SHORT').sum():,}")
@@ -229,7 +229,7 @@ def run_backtest_command(
         min_month = 0
         max_month = 0
 
-    print("NEXUS V2 v2.0.1-dev15")
+    print("NEXUS V2 v2.0.1-dev18")
     print(f"- Trades:          {stats['trades']:,}")
     print(f"- Wins:            {stats['wins']:,}")
     print(f"- Losses:          {stats['losses']:,}")
@@ -271,7 +271,7 @@ def run_optimize_command(
     optimizer.export_results(results, output_path)
     optimizer.export_best_config(best_config, best_config_output)
 
-    print("NEXUS V2 v2.0.1-dev15")
+    print("NEXUS V2 v2.0.1-dev18")
     print(f"- Optimizer runs:  {len(results):,}")
     if not results.empty:
         valid = results.loc[results["objective"] != float("-inf")]
