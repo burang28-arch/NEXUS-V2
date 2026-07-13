@@ -2,6 +2,14 @@ objective:
   minimum_trades: 200
   minimum_average_trades_per_month: 4.0
 parameters:
+  entry.adx_max:
+  - 14.0
+  - 16.0
+  - 18.0
+  - 20.0
+  - 22.0
+  - 25.0
+  - 30.0
   entry.l1_rsi_long_max:
   - 25.0
   - 28.0
@@ -30,14 +38,6 @@ parameters:
   entry.l2_right_bars:
   - 1
   - 2
-  indicators.bollinger.length:
-  - 16
-  - 20
-  - 24
-  indicators.bollinger.stddev:
-  - 1.8
-  - 2.0
-  - 2.2
   risk.stop_loss_pct:
   - 0.8
   - 1.0

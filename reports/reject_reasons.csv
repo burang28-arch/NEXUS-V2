@@ -1,3 +1,3 @@
 reason,long_count,short_count,total_count,share_of_all_direction_checks_pct
-no_confirmed_divergence_after_band_touch,0,0,0,0.0
-position_open_or_margin_limit,419,466,885,0.28071711327649207
+divergence_or_adx_filter,0,0,0,0.0
+position_open_or_margin_limit,397,574,971,0.30799583840844497

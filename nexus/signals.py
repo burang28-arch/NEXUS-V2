@@ -33,7 +33,7 @@ def _divergence_signals(
     l2_right: int,
     l1_rsi_threshold: float,
     min_rsi_difference: float,
-    require_band_touch: bool,
+    adx_max: float,
 ) -> pd.DataFrame:
     """
     Pair each fast-confirmed L2 pivot with the most recent eligible L1 pivot.
@@ -45,7 +45,6 @@ def _divergence_signals(
     is_long = side == "LONG"
     price_col = "low" if is_long else "high"
     mode = "low" if is_long else "high"
-    band_col = "bb_lower" if is_long else "bb_upper"
 
     l1_mask = _pivot_mask(frame[price_col], left, l1_right, mode)
     l2_mask = _pivot_mask(frame[price_col], left, l2_right, mode)
@@ -59,7 +58,7 @@ def _divergence_signals(
     output["l1_rsi"] = np.nan
     output["l2_rsi"] = np.nan
     output["rsi_difference"] = np.nan
-    output["band_touch"] = False
+    output["adx_value"] = np.nan
 
     eligible_l1: list[int] = []
     l1_indices = list(frame.index[l1_mask])
@@ -101,14 +100,11 @@ def _divergence_signals(
         price_condition = l2_price < l1_price if is_long else l2_price > l1_price
         rsi_difference = l2_rsi - l1_rsi if is_long else l1_rsi - l2_rsi
         rsi_condition = rsi_difference >= min_rsi_difference
-        band_touch = (
-            float(frame.at[l2_index, price_col]) <= float(frame.at[l2_index, band_col])
-            if is_long
-            else float(frame.at[l2_index, price_col]) >= float(frame.at[l2_index, band_col])
-        )
-        band_condition = band_touch if require_band_touch else True
 
-        if not (price_condition and rsi_condition and band_condition):
+        adx_value = frame.at[signal_index, "adx"]
+        adx_condition = pd.notna(adx_value) and float(adx_value) <= adx_max
+
+        if not (price_condition and rsi_condition and adx_condition):
             continue
 
         output.at[signal_index, "setup"] = True
@@ -119,7 +115,7 @@ def _divergence_signals(
         output.at[signal_index, "l1_rsi"] = l1_rsi
         output.at[signal_index, "l2_rsi"] = l2_rsi
         output.at[signal_index, "rsi_difference"] = rsi_difference
-        output.at[signal_index, "band_touch"] = bool(band_touch)
+        output.at[signal_index, "adx_value"] = float(adx_value)
 
     return output
 
@@ -133,7 +129,7 @@ def add_signal_columns(frame: pd.DataFrame, config: dict[str, Any]) -> pd.DataFr
     l1_right = int(entry_cfg["l1_right_bars"])
     l2_right = int(entry_cfg["l2_right_bars"])
     min_rsi_difference = float(entry_cfg["min_rsi_difference"])
-    require_band_touch = bool(entry_cfg.get("require_band_touch", True))
+    adx_max = float(entry_cfg["adx_max"])
 
     components = _candle_components(result)
     body = components["body"]
@@ -170,12 +166,12 @@ def add_signal_columns(frame: pd.DataFrame, config: dict[str, Any]) -> pd.DataFr
     long_div = _divergence_signals(
         result, "LONG", left, l1_right, l2_right,
         float(entry_cfg["l1_rsi_long_max"]), min_rsi_difference,
-        require_band_touch,
+        adx_max,
     )
     short_div = _divergence_signals(
         result, "SHORT", left, l1_right, l2_right,
         float(entry_cfg["l1_rsi_short_min"]), min_rsi_difference,
-        require_band_touch,
+        adx_max,
     )
 
     result["long_setup"] = long_div["setup"].astype(bool)
@@ -183,7 +179,7 @@ def add_signal_columns(frame: pd.DataFrame, config: dict[str, Any]) -> pd.DataFr
     for prefix, source in (("long", long_div), ("short", short_div)):
         for column in (
             "l1_index", "l2_index", "l1_price", "l2_price",
-            "l1_rsi", "l2_rsi", "rsi_difference", "band_touch",
+            "l1_rsi", "l2_rsi", "rsi_difference", "adx_value",
         ):
             result[f"{prefix}_{column}"] = source[column]
 
@@ -216,8 +212,8 @@ def add_signal_columns(frame: pd.DataFrame, config: dict[str, Any]) -> pd.DataFr
     result["signal_reason"] = np.select(
         [result["long_setup"], result["short_setup"]],
         [
-            "Bullish RSI divergence + BB lower touch",
-            "Bearish RSI divergence + BB upper touch",
+            "Bullish RSI divergence + ADX filter",
+            "Bearish RSI divergence + ADX filter",
         ], default="",
     )
     result["divergence_l1_price"] = np.select(
@@ -240,10 +236,11 @@ def add_signal_columns(frame: pd.DataFrame, config: dict[str, Any]) -> pd.DataFr
         [result["long_setup"], result["short_setup"]],
         [result["long_rsi_difference"], result["short_rsi_difference"]], default=np.nan,
     )
-    result["band_touch"] = np.select(
+    result["divergence_adx"] = np.select(
         [result["long_setup"], result["short_setup"]],
-        [result["long_band_touch"], result["short_band_touch"]], default=False,
-    ).astype(bool)
+        [result["long_adx_value"], result["short_adx_value"]],
+        default=np.nan,
+    )
     return result
 
 
@@ -254,6 +251,6 @@ def extract_signals(frame: pd.DataFrame) -> pd.DataFrame:
         "volume_score", "long_candle_score", "short_candle_score", "score",
         "size_multiplier", "stop_price", "divergence_l1_price",
         "divergence_l2_price", "divergence_l1_rsi", "divergence_l2_rsi",
-        "divergence_rsi_difference", "band_touch",
+        "divergence_rsi_difference", "divergence_adx",
     ]
     return frame.loc[frame["signal"] != "", columns].copy()

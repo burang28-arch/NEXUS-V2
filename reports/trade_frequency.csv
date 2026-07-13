@@ -1,5 +1,5 @@
 stage,long_count,short_count,total_count,dropped_from_previous,pass_rate_from_previous_pct
 total_candles,157632,157632,157632,0,100.0
-bollinger_touch_on_l2,876,947,1823,155809,1.1564910678034916
-confirmed_rsi_divergence,876,947,1823,0,100.0
-executed_trades,457,481,938,885,51.45364783324191
+divergence_candidates,576,818,1394,156238,0.8843382054405198
+confirmed_rsi_divergence_with_adx,576,818,1394,0,100.0
+executed_trades,179,244,423,971,30.34433285509326
