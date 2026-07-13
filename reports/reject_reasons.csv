@@ -1,7 +1,7 @@
 reason,long_count,short_count,total_count,share_of_all_direction_checks_pct
 rsi_filter,144641,143820,288461,91.49823639870077
 adx_filter_after_rsi,11323,11928,23251,7.375088814453918
-position_open_or_margin_limit,749,881,1630,0.517026999593991
+position_open_or_margin_limit,699,834,1533,0.48625913520097447
 bollinger_not_touched,119,154,273,0.08659409257003654
 indicator_not_ready,26,26,52,0.01649411287048315
 invalid_stop_or_targets,0,0,0,0.0

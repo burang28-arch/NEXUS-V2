@@ -1,39 +1,31 @@
-# NEXUS V2 — v2.0.1-dev16
+# NEXUS V2 — v2.0.1-dev17
 
-DEV16은 부분 익절을 제거하고 단일 목표가에서 전량 청산합니다.
+DEV17은 포지션 규모와 고정 손절·익절 설정만 변경합니다.
 
 ## 설정
 
 ```yaml
 risk:
-  stop_loss_pct: 1.0
+  initial_equity: 1000.0
+  base_margin_pct: 3.0
+  leverage: 30.0
+  stop_loss_pct: 0.9
 
 exit:
-  take_profit_pct: 2.2
+  take_profit_pct: 1.5
 ```
 
-모든 수치는 설정 파일에서 관리하며 코드에 하드코딩하지 않습니다.
+## 의미
 
-## 동작
-
-### LONG
-
-- 손절: 진입가 대비 -1.0%
-- 익절: 진입가 대비 +2.2%
+- 총 자산: $1,000
+- 1회 증거금: 자산의 3% = $30
+- 레버리지: 30배
+- 명목 포지션 규모: 약 $900
+- 손절: 가격 기준 -0.9%
+- 익절: 가격 기준 +1.5%
 - 목표가 도달 시 100% 종료
 
-### SHORT
-
-- 손절: 진입가 대비 +1.0%
-- 익절: 진입가 대비 -2.2%
-- 목표가 도달 시 100% 종료
-
-동일 봉에서 손절과 익절이 모두 닿으면 기존과 동일하게 손절을 먼저 처리합니다.
-
-## 호환성
-
-기존 CSV와 차트 코드 호환을 위해 `tp1_price`, `tp2_price` 열은 유지되며,
-두 열 모두 동일한 단일 목표가를 기록합니다.
+롱과 숏에 대칭 적용됩니다.
 
 ## 검증
 
@@ -46,6 +38,6 @@ exit:
 
 ```powershell
 git add .
-git commit -m "feat: close full position at configurable 2.2 percent target"
+git commit -m "tune: set 30x leverage with 0.9 stop and 1.5 target"
 git push
 ```
