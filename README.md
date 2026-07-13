@@ -1,24 +1,37 @@
-# NEXUS V2 — v2.0.1-dev3
+# NEXUS V2 — v2.0.1-dev4
 
-DEV3는 기존 백테스트가 `nexus/core/position.py`의 `Position`을 실제로 사용하도록 연결한 작은 리팩터링입니다.
+DEV4는 계좌 상태와 포트폴리오 클래스만 추가합니다.
 
-## 변경 범위
+## 추가된 파일
 
-- `nexus/backtest.py` 내부의 중복 `Position` 클래스 제거
-- `nexus.core.position.Position` import
-- 부분 청산 시 `Position.reduce()` 사용
-- TP1 완료 시 `Position.mark_tp1_done()` 사용
+```text
+nexus/core/account.py
+nexus/core/portfolio.py
+tests/test_core_account.py
+tests/test_core_portfolio.py
+```
 
-Broker, TradeRecord, Portfolio, 전략 조건은 건드리지 않았습니다.
+## 구현 범위
 
-## 검증
+- 초기 잔고와 현재 잔고
+- 실현·미실현 손익
+- Equity
+- 사용 증거금
+- 가용 증거금
+- 롱 1개와 숏 1개의 독립 보유
+- 같은 방향 중복 포지션 방지
+
+기존 `nexus/backtest.py`는 수정하지 않았습니다. 따라서 기존 백테스트 결과는 바뀌면 안 됩니다.
+
+## 검증 명령
 
 ```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe -m pytest -q
 .\.venv\Scripts\python.exe nexus.py backtest .\data\BTCUSDT_15M.csv
 ```
 
-통과 기준:
+기대 백테스트 기준:
 
 ```text
 Trades: 277
@@ -31,6 +44,6 @@ Net profit: -5.21
 
 ```powershell
 git add .
-git commit -m "refactor: use core Position in backtest"
+git commit -m "feat: add account and portfolio core models"
 git push
 ```
