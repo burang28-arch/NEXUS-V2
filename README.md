@@ -1,35 +1,51 @@
-# NEXUS V2 — v2.0.1-dev13
+# NEXUS V2 — v2.0.1-dev14
 
-DEV13은 setup 후보가 손절 및 목표가 검증에서 탈락하는 이유를 분석합니다.
+DEV14는 손절 계산값을 실제 숫자로 확인하는 디버그 CSV를 생성합니다.
 
-## 출력
+## 출력 파일
 
 ```text
-reports/stop_analysis.csv
+reports/stop_debug.csv
 ```
 
-## 사유
+## 주요 열
 
-- valid
-- no_next_open
-- stop_missing
-- stop_wrong_side
-- tp1_wrong_side
-- tp2_wrong_side
+- side
+- next_open_raw
+- entry_after_slippage
+- signal_high
+- signal_low
+- swing_price
+- atr
+- atr_buffer
+- stop_price
+- stop_distance
+- is_valid
+- reason
+- swing_vs_entry
+- reference_vs_entry
 
-전략과 손절 계산 방식은 변경하지 않습니다.
+기본적으로 잘못된 후보부터 최대 200개를 저장합니다.
 
-## 검증
+## 실행
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
 .\.venv\Scripts\python.exe nexus.py backtest .\data\BTCUSDT_15M.csv
 ```
 
+더 많이 출력:
+
+```powershell
+.\.venv\Scripts\python.exe nexus.py backtest .\data\BTCUSDT_15M.csv --stop-debug-rows 1000
+```
+
+전략과 손절 계산 로직은 변경하지 않습니다.
+
 ## 커밋
 
 ```powershell
 git add .
-git commit -m "feat: add stop and target validation analysis"
+git commit -m "feat: add stop calculation debug report"
 git push
 ```
