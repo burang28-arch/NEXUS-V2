@@ -1,9 +1,5 @@
 stage,long_count,short_count,total_count,dropped_from_previous,pass_rate_from_previous_pct
 total_candles,157632,157632,157632,0,100.0
-indicator_ready,157606,157606,157606,26,99.98350588712952
-rsi_pass,12965,13786,26751,130855,16.973338578480515
-adx_pass,1642,1858,3500,23251,13.083623042129267
-bollinger_touch,1523,1704,3227,273,92.2
-valid_stop_and_targets,1523,1704,3227,0,100.0
-limit_filled_within_expiry,628,635,1263,1964,39.13851874806322
-executed_trades,415,414,829,434,65.63737133808392
+bollinger_touch_on_l2,876,947,1823,155809,1.1564910678034916
+confirmed_rsi_divergence,876,947,1823,0,100.0
+executed_trades,457,481,938,885,51.45364783324191

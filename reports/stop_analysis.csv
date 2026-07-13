@@ -1,10 +1,5 @@
 side,reason,count,share_of_side_setups_pct
-LONG,valid,1523,100.0
-LONG,no_next_open,0,0.0
+LONG,valid,876,100.0
 LONG,invalid_config,0,0.0
-SHORT,valid,1704,100.0
-SHORT,no_next_open,0,0.0
+SHORT,valid,947,100.0
 SHORT,invalid_config,0,0.0
-ALL,valid,3227,100.0
-ALL,no_next_open,0,0.0
-ALL,invalid_config,0,0.0

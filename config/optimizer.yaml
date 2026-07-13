@@ -1,29 +1,53 @@
 objective:
   minimum_trades: 200
   minimum_average_trades_per_month: 4.0
-
 parameters:
-  entry.adx_max:
-    - 18.0
-    - 20.0
-    - 22.0
-    - 24.0
-
-  entry.rsi_long_max:
-    - 30.0
-    - 33.0
-    - 35.0
-    - 38.0
-
-  entry.rsi_short_min:
-    - 62.0
-    - 65.0
-    - 67.0
-    - 70.0
-
+  entry.l1_rsi_long_max:
+  - 25.0
+  - 28.0
+  - 30.0
+  - 32.0
+  - 35.0
+  entry.l1_rsi_short_min:
+  - 65.0
+  - 68.0
+  - 70.0
+  - 72.0
+  - 75.0
+  entry.min_rsi_difference:
+  - 6.0
+  - 8.0
+  - 10.0
+  - 12.0
+  entry.pivot_left_bars:
+  - 2
+  - 3
+  - 4
+  entry.l1_right_bars:
+  - 2
+  - 3
+  - 4
+  entry.l2_right_bars:
+  - 1
+  - 2
+  indicators.bollinger.length:
+  - 16
+  - 20
+  - 24
+  indicators.bollinger.stddev:
+  - 1.8
+  - 2.0
+  - 2.2
   risk.stop_loss_pct:
-    - 0.5
-    - 0.75
-    - 1.0
-    - 1.25
-    - 1.5
+  - 0.8
+  - 1.0
+  - 1.2
+  - 1.5
+  exit.tp1_pct:
+  - 1.5
+  - 2.0
+  - 2.5
+  exit.tp2_pct:
+  - 3.0
+  - 4.0
+  - 5.0

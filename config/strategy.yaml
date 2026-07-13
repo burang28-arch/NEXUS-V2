@@ -1,6 +1,6 @@
 project:
   name: NEXUS V2
-  version: 2.0.1-dev18
+  version: 2.0.1-dev19
   symbol: BTCUSDT
   timeframe: 15m
 indicators:
@@ -16,16 +16,17 @@ indicators:
   volume:
     ma_length: 20
   swing:
-    left_bars: 2
-    right_bars: 2
+    left_bars: 3
+    right_bars: 3
 entry:
-  adx_max: 22.0
-  rsi_long_max: 35.0
-  rsi_short_min: 65.0
+  strategy: rsi_divergence
+  l1_rsi_long_max: 30.0
+  l1_rsi_short_min: 70.0
+  min_rsi_difference: 8.0
+  pivot_left_bars: 3
+  l1_right_bars: 3
+  l2_right_bars: 1
   require_band_touch: true
-  order_type: limit
-  limit_offset_pct: 0.3
-  limit_expiry_bars: 2
 scoring:
   volume_above_average_points: 1
   reversal_candle_points: 1
@@ -46,4 +47,7 @@ risk:
   fee_rate_pct: 0.055
   slippage_rate_pct: 0.02
 exit:
-  take_profit_pct: 1.5
+  tp1_fraction: 0.7
+  tp2_fraction: 0.3
+  tp1_pct: 2.0
+  tp2_pct: 4.0

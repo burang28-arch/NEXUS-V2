@@ -7,63 +7,34 @@ import pandas as pd
 
 
 class StopDebugReport:
-    """Export fixed stop/target calculations for limit-entry candidates."""
+    """Export entry-based fixed stop and take-profit calculations."""
 
     @classmethod
-    def prepare(
-        cls,
-        frame: pd.DataFrame,
-        config: dict[str, Any],
-        max_rows: int = 200,
-    ) -> pd.DataFrame:
+    def prepare(cls, frame: pd.DataFrame, config: dict[str, Any], max_rows: int = 200) -> pd.DataFrame:
         cls._validate_frame(frame)
-
-        offset = float(config["entry"]["limit_offset_pct"]) / 100.0
-        expiry = int(config["entry"]["limit_expiry_bars"])
+        slip = float(config["risk"]["slippage_rate_pct"]) / 100.0
         stop_pct = float(config["risk"]["stop_loss_pct"]) / 100.0
-        take_profit_pct = float(config["exit"]["take_profit_pct"]) / 100.0
-
+        tp1_pct = float(config["exit"]["tp1_pct"]) / 100.0
+        tp2_pct = float(config["exit"]["tp2_pct"]) / 100.0
         rows = []
         for side, setup_col in (("LONG", "long_setup"), ("SHORT", "short_setup")):
             for index in frame.index[frame[setup_col].fillna(False)]:
-                first_bar = index + 1
-                if first_bar >= len(frame):
+                if index + 1 >= len(frame):
                     continue
-
-                reference_open = float(frame.iloc[first_bar]["open"])
-                limit_price = (
-                    reference_open * (1.0 - offset)
-                    if side == "LONG"
-                    else reference_open * (1.0 + offset)
-                )
-                end_bar = min(len(frame), first_bar + expiry)
-                window = frame.iloc[first_bar:end_bar]
-
+                raw = float(frame.iloc[index + 1]["open"])
+                entry = raw * (1 + slip if side == "LONG" else 1 - slip)
                 if side == "LONG":
-                    fillable = bool((window["low"] <= limit_price).any())
-                    stop = limit_price * (1.0 - stop_pct)
-                    take_profit = limit_price * (1.0 + take_profit_pct)
+                    stop, tp1, tp2 = entry*(1-stop_pct), entry*(1+tp1_pct), entry*(1+tp2_pct)
                 else:
-                    fillable = bool((window["high"] >= limit_price).any())
-                    stop = limit_price * (1.0 + stop_pct)
-                    take_profit = limit_price * (1.0 - take_profit_pct)
-
-                rows.append(
-                    {
-                        "timestamp": frame.loc[index, "timestamp"],
-                        "side": side,
-                        "reference_next_open": reference_open,
-                        "limit_offset_pct": offset * 100.0,
-                        "limit_price": limit_price,
-                        "limit_expiry_bars": expiry,
-                        "fillable_within_expiry": fillable,
-                        "stop_loss_pct": stop_pct * 100.0,
-                        "take_profit_pct": take_profit_pct * 100.0,
-                        "stop_price": stop,
-                        "take_profit_price": take_profit,
-                    }
-                )
-
+                    stop, tp1, tp2 = entry*(1+stop_pct), entry*(1-tp1_pct), entry*(1-tp2_pct)
+                rows.append({
+                    "timestamp": frame.loc[index, "timestamp"], "side": side,
+                    "next_open_raw": raw, "entry_after_slippage": entry,
+                    "stop_loss_pct": stop_pct*100, "tp1_pct": tp1_pct*100, "tp2_pct": tp2_pct*100,
+                    "stop_price": stop, "tp1_price": tp1, "tp2_price": tp2,
+                    "stop_distance": abs(entry-stop), "tp1_distance": abs(tp1-entry), "tp2_distance": abs(tp2-entry),
+                    "is_valid": (stop < entry < tp1 < tp2) if side == "LONG" else (stop > entry > tp1 > tp2),
+                })
         report = pd.DataFrame(rows)
         return report.head(max_rows).copy() if max_rows > 0 else report
 
@@ -76,16 +47,7 @@ class StopDebugReport:
 
     @staticmethod
     def _validate_frame(frame):
-        required = {
-            "timestamp",
-            "open",
-            "high",
-            "low",
-            "long_setup",
-            "short_setup",
-        }
+        required = {"timestamp", "open", "long_setup", "short_setup"}
         missing = sorted(required.difference(frame.columns))
         if missing:
-            raise ValueError(
-                "Stop debug report is missing columns: " + ", ".join(missing)
-            )
+            raise ValueError("Stop debug report is missing columns: " + ", ".join(missing))

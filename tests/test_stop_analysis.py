@@ -3,7 +3,7 @@ import pandas as pd
 from nexus.reports.stop_analysis import StopAnalysis
 
 
-def test_fixed_levels_are_valid_when_next_open_exists():
+def test_fixed_levels_are_valid_for_both_sides():
     frame = pd.DataFrame(
         {
             "open": [100.0, 101.0, 102.0],
@@ -13,12 +13,8 @@ def test_fixed_levels_are_valid_when_next_open_exists():
     )
     config = {
         "risk": {"stop_loss_pct": 1.0},
-        "exit": {"take_profit_pct": 2.2},
+        "exit": {"tp1_pct": 2.0, "tp2_pct": 4.0},
     }
-
     report = StopAnalysis.prepare(frame, config)
-
-    valid_count = report[
-        (report.side == "ALL") & (report.reason == "valid")
-    ]["count"].iloc[0]
-    assert valid_count == 2
+    assert report.loc[(report.side == "LONG") & (report.reason == "valid"), "count"].iloc[0] == 1
+    assert report.loc[(report.side == "SHORT") & (report.reason == "valid"), "count"].iloc[0] == 1
