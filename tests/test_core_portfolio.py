@@ -43,3 +43,18 @@ def test_portfolio_prevents_duplicate_side() -> None:
 
     with pytest.raises(RuntimeError):
         portfolio.open_position(make_position("LONG"))
+
+
+
+def test_close_releases_only_selected_position_margin() -> None:
+    portfolio = Portfolio(Account.create(1000.0))
+    portfolio.open_position(make_position("LONG", 20.0))
+    portfolio.open_position(make_position("SHORT", 30.0))
+
+    portfolio.close_position("LONG", 10.0)
+
+    assert not portfolio.has_open_position("LONG")
+    assert portfolio.has_open_position("SHORT")
+    assert portfolio.used_margin == pytest.approx(30.0)
+    assert portfolio.account.balance == pytest.approx(1010.0)
+    assert portfolio.account.free_margin == pytest.approx(980.0)

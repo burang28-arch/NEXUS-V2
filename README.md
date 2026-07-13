@@ -1,37 +1,29 @@
-# NEXUS V2 — v2.0.1-dev4
+# NEXUS V2 — v2.0.1-dev5
 
-DEV4는 계좌 상태와 포트폴리오 클래스만 추가합니다.
+DEV5는 기존 백테스트의 계좌 및 증거금 관리를 `Account`와 `Portfolio`에 연결합니다.
 
-## 추가된 파일
+## 변경 범위
 
-```text
-nexus/core/account.py
-nexus/core/portfolio.py
-tests/test_core_account.py
-tests/test_core_portfolio.py
-```
+- `nexus/backtest.py`
+  - 독립 `equity` 변수 대신 `portfolio.account.equity` 사용
+  - 롱·숏 상태를 `Portfolio`에서 관리
+  - 진입 시 `Portfolio.open_position()`
+  - 종료 시 `Portfolio.close_position()`
+- `nexus/core/portfolio.py`
+  - 한쪽 포지션 종료 시 반대쪽 증거금이 정확히 유지되도록 수정
+- `tests/test_core_portfolio.py`
+  - 헤지 상태에서 한쪽 포지션 종료 테스트 추가
 
-## 구현 범위
+전략 조건, TP, 손절, 수수료, 슬리피지 계산은 변경하지 않습니다.
 
-- 초기 잔고와 현재 잔고
-- 실현·미실현 손익
-- Equity
-- 사용 증거금
-- 가용 증거금
-- 롱 1개와 숏 1개의 독립 보유
-- 같은 방향 중복 포지션 방지
-
-기존 `nexus/backtest.py`는 수정하지 않았습니다. 따라서 기존 백테스트 결과는 바뀌면 안 됩니다.
-
-## 검증 명령
+## 검증
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe -m pytest -q
 .\.venv\Scripts\python.exe nexus.py backtest .\data\BTCUSDT_15M.csv
 ```
 
-기대 백테스트 기준:
+기대 기준:
 
 ```text
 Trades: 277
@@ -44,6 +36,6 @@ Net profit: -5.21
 
 ```powershell
 git add .
-git commit -m "feat: add account and portfolio core models"
+git commit -m "refactor: manage backtest positions through Portfolio"
 git push
 ```

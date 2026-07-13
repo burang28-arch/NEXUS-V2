@@ -39,7 +39,7 @@ class Portfolio:
         if position is None:
             raise RuntimeError(f"No {side} position is open.")
 
-        released_margin = position.margin_used
+        remaining_margin = max(0.0, self.used_margin - position.margin_used)
         position.close()
 
         if side == "LONG":
@@ -48,7 +48,7 @@ class Portfolio:
             self.short_position = None
 
         self.account.apply_realized_pnl(realized_pnl)
-        self.account.update_margin(max(0.0, self.used_margin - released_margin))
+        self.account.update_margin(remaining_margin)
         return position
 
     def update_unrealized_pnl(

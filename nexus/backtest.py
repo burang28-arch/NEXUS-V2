@@ -6,7 +6,9 @@ from typing import Any, Literal
 import numpy as np
 import pandas as pd
 
+from nexus.core.account import Account
 from nexus.core.broker import BacktestBroker
+from nexus.core.portfolio import Portfolio
 from nexus.core.position import Position
 
 
@@ -255,84 +257,88 @@ def run_backtest(
     frame: pd.DataFrame,
     config: dict[str, Any],
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    equity = float(config["risk"]["initial_equity"])
+    initial_equity = float(config["risk"]["initial_equity"])
     max_total_margin_pct = float(config["risk"].get("max_total_margin_pct", 6.0))
     broker = BacktestBroker(
         fee_rate_pct=float(config["risk"]["fee_rate_pct"]),
         slippage_rate_pct=float(config["risk"]["slippage_rate_pct"]),
     )
+    portfolio = Portfolio(Account.create(initial_equity))
 
-    long_position: Position | None = None
-    short_position: Position | None = None
     records: list[TradeRecord] = []
     equity_curve: list[dict[str, Any]] = []
-
     signal_rows: dict[int, pd.Series] = {}
 
     for i in range(1, len(frame)):
         bar = frame.iloc[i]
 
+        long_position = portfolio.long_position
         if long_position is not None:
             sig = signal_rows[long_position.signal_index]
-            long_position, trade = _process_position_bar(
+            updated_position, trade = _process_position_bar(
                 long_position, bar, sig, config, broker
             )
             if trade is not None:
-                equity += trade.net_pnl
+                portfolio.close_position("LONG", trade.net_pnl)
                 records.append(trade)
+            else:
+                portfolio.long_position = updated_position
 
+        short_position = portfolio.short_position
         if short_position is not None:
             sig = signal_rows[short_position.signal_index]
-            short_position, trade = _process_position_bar(
+            updated_position, trade = _process_position_bar(
                 short_position, bar, sig, config, broker
             )
             if trade is not None:
-                equity += trade.net_pnl
+                portfolio.close_position("SHORT", trade.net_pnl)
                 records.append(trade)
+            else:
+                portfolio.short_position = updated_position
 
         signal_row = frame.iloc[i - 1]
-        used_margin = 0.0
-        if long_position is not None:
-            used_margin += long_position.margin_used
-        if short_position is not None:
-            used_margin += short_position.margin_used
+        equity = portfolio.account.equity
 
-        if signal_row["signal"] == "LONG" and long_position is None:
+        if signal_row["signal"] == "LONG" and not portfolio.has_open_position("LONG"):
             candidate = _build_position(
                 "LONG", signal_row, bar, i - 1, i, equity, config, broker
             )
             if candidate is not None:
-                projected_pct = (used_margin + candidate.margin_used) / equity * 100.0
+                projected_pct = (
+                    (portfolio.used_margin + candidate.margin_used) / equity * 100.0
+                )
                 if projected_pct <= max_total_margin_pct:
-                    long_position = candidate
+                    portfolio.open_position(candidate)
                     signal_rows[i - 1] = signal_row
-                    used_margin += candidate.margin_used
 
-        if signal_row["signal"] == "SHORT" and short_position is None:
+        if signal_row["signal"] == "SHORT" and not portfolio.has_open_position("SHORT"):
             candidate = _build_position(
                 "SHORT", signal_row, bar, i - 1, i, equity, config, broker
             )
             if candidate is not None:
-                projected_pct = (used_margin + candidate.margin_used) / equity * 100.0
+                projected_pct = (
+                    (portfolio.used_margin + candidate.margin_used) / equity * 100.0
+                )
                 if projected_pct <= max_total_margin_pct:
-                    short_position = candidate
+                    portfolio.open_position(candidate)
                     signal_rows[i - 1] = signal_row
 
         equity_curve.append(
             {
                 "timestamp": bar["timestamp"],
-                "equity": equity,
-                "long_open": int(long_position is not None),
-                "short_open": int(short_position is not None),
+                "equity": portfolio.account.equity,
+                "long_open": int(portfolio.has_open_position("LONG")),
+                "short_open": int(portfolio.has_open_position("SHORT")),
             }
         )
 
-    # Close any remaining positions at final close.
     final_bar = frame.iloc[-1]
 
-    for position in [long_position, short_position]:
+    for side in ("LONG", "SHORT"):
+        position = portfolio.get_position(side)
         if position is None:
             continue
+
         sig = signal_rows[position.signal_index]
         exit_price = broker.exit_fill(
             float(final_bar["close"]),
@@ -344,15 +350,20 @@ def run_backtest(
         )
         total_fees = position.fee_open + close_fee
         trade = _finalize_trade(
-            position, sig, final_bar["timestamp"], exit_price, "END_OF_DATA", total_fees
+            position,
+            sig,
+            final_bar["timestamp"],
+            exit_price,
+            "END_OF_DATA",
+            total_fees,
         )
-        equity += trade.net_pnl
+        portfolio.close_position(side, trade.net_pnl)
         records.append(trade)
 
     trades = pd.DataFrame([asdict(record) for record in records])
     curve = pd.DataFrame(equity_curve)
     if not curve.empty:
-        curve.loc[curve.index[-1], "equity"] = equity
+        curve.loc[curve.index[-1], "equity"] = portfolio.account.equity
     return trades, curve
 
 
