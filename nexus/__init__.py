@@ -1,3 +1,3 @@
 """NEXUS V2 package."""
 
-__version__ = "2.0.1-dev5"
+__version__ = "2.0.1-dev6"
