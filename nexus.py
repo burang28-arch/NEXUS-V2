@@ -9,6 +9,7 @@ from nexus.config import load_config
 from nexus.data import load_ohlcv_csv
 from nexus.indicators import add_indicators
 from nexus.signals import add_signal_columns, extract_signals
+from nexus.reports.trade_logger import TradeLogger
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -97,12 +98,12 @@ def run_backtest_command(
 
     trades_output.parent.mkdir(parents=True, exist_ok=True)
     equity_output.parent.mkdir(parents=True, exist_ok=True)
-    trades.to_csv(trades_output, index=False)
+    trade_log = TradeLogger.export(trades, trades_output)
     curve.to_csv(equity_output, index=False)
 
     if not trades.empty:
         monthly = (
-            trades.assign(month=trades["entry_time"].dt.to_period("M").astype(str))
+            trade_log.assign(month=trade_log["entry_time"].dt.to_period("M").astype(str))
             .groupby("month")
             .size()
         )
