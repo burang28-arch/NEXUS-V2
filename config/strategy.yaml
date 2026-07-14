@@ -1,6 +1,6 @@
 project:
   name: NEXUS V2
-  version: 2.0.1-dev20
+  version: 2.0.1-dev21
   symbol: BTCUSDT
   timeframe: 15m
 indicators:
@@ -21,12 +21,12 @@ indicators:
 entry:
   strategy: rsi_divergence
   l1_rsi_long_max: 30.0
-  l1_rsi_short_min: 70.0
-  min_rsi_difference: 8.0
+  l1_rsi_short_min: 75.0
+  min_rsi_difference: 10.0
   pivot_left_bars: 3
-  l1_right_bars: 3
+  l1_right_bars: 2
   l2_right_bars: 1
-  adx_max: 22.0
+  adx_max: 25.0
 scoring:
   volume_above_average_points: 1
   reversal_candle_points: 1

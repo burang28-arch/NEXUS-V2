@@ -1,36 +1,28 @@
-# NEXUS V2 — v2.0.1-dev20
+# NEXUS V2 — v2.0.1-dev21
 
-DEV20은 RSI 다이버전스 진입에서 볼린저 밴드 터치 조건을 제거하고,
-ADX 필터를 적용합니다.
+DEV21은 기존 옵티마이저가 선택한 최적값을 기본 전략 설정에 적용합니다.
 
-## 진입 조건
+## 적용값
 
-### LONG
+```yaml
+entry:
+  strategy: rsi_divergence
+  l1_rsi_long_max: 30.0
+  l1_rsi_short_min: 75.0
+  min_rsi_difference: 10.0
+  pivot_left_bars: 3
+  l1_right_bars: 2
+  l2_right_bars: 1
+  adx_max: 25.0
+```
 
-- L1 가격 저점 피벗: 좌 3 / 우 3
-- L1 RSI ≤ 30
-- L2 가격 저점 피벗: 좌 3 / 우 1
-- L2 가격 < L1 가격
-- L2 RSI ≥ L1 RSI + 8
-- 신호 확정 봉 ADX ≤ 22
-- 다음 봉 시가 시장가 진입
-
-### SHORT
-
-반대 조건:
-
-- L1 RSI ≥ 70
-- L2 가격 > L1 가격
-- L2 RSI ≤ L1 RSI - 8
-- 신호 확정 봉 ADX ≤ 22
-- 다음 봉 시가 시장가 진입
-
-볼린저 밴드는 진입 조건에 사용하지 않습니다.
-
-## 청산
+## 유지되는 리스크 및 청산 설정
 
 ```yaml
 risk:
+  initial_equity: 1000.0
+  base_margin_pct: 3.0
+  leverage: 30.0
   stop_loss_pct: 1.0
 
 exit:
@@ -40,33 +32,8 @@ exit:
   tp2_fraction: 0.3
 ```
 
-## 옵티마이저
-
-볼린저 관련 항목은 제거했고 ADX를 추가했습니다.
-
-```yaml
-entry.adx_max:
-  - 14
-  - 16
-  - 18
-  - 20
-  - 22
-  - 25
-  - 30
-```
-
-실행:
-
-```powershell
-.\.venv\Scripts\python.exe nexus.py optimize .\data\BTCUSDT_15M.csv
-```
-
-결과:
-
-```text
-reports\optimizer_results.csv
-reports\best_strategy.yaml
-```
+DEV21에서는 옵티마이저 구조를 변경하지 않습니다.
+ADX 구간형 최적화는 DEV22에서 별도로 구현합니다.
 
 ## 검증
 
@@ -79,6 +46,6 @@ reports\best_strategy.yaml
 
 ```powershell
 git add .
-git commit -m "feat: replace Bollinger confirmation with ADX filter"
+git commit -m "tune: apply optimized divergence strategy parameters"
 git push
 ```
