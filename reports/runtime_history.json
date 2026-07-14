@@ -1,0 +1,36 @@
+{
+  "backtest": [
+    {
+      "seconds": 18.08223930001259,
+      "rows": 157632,
+      "workers": 1,
+      "runs": 1
+    },
+    {
+      "seconds": 18.05628920008894,
+      "rows": 157632,
+      "workers": 1,
+      "runs": 1
+    },
+    {
+      "seconds": 31.802736399928108,
+      "rows": 157632,
+      "workers": 1,
+      "runs": 1
+    },
+    {
+      "seconds": 38.26460540003609,
+      "rows": 157632,
+      "workers": 1,
+      "runs": 1
+    }
+  ],
+  "optimize": [
+    {
+      "seconds": 136.3438689999748,
+      "rows": 157632,
+      "workers": 10,
+      "runs": 30
+    }
+  ]
+}

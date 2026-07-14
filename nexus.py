@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from time import perf_counter
 from pathlib import Path
 
 from nexus.backtest import calculate_statistics, run_backtest
@@ -14,6 +15,13 @@ from nexus.optimizer import (
     recommended_workers,
 )
 from nexus.signals import add_signal_columns, extract_signals
+from nexus.runtime import (
+    estimate_backtest_seconds,
+    estimate_optimizer_seconds,
+    format_duration,
+    optimizer_plan,
+    record_runtime,
+)
 from nexus.reports.monthly_report import MonthlyReport
 from nexus.reports.signal_analysis import SignalAnalyzer
 from nexus.reports.stop_analysis import StopAnalysis
@@ -83,13 +91,16 @@ def build_parser() -> argparse.ArgumentParser:
     backtest_parser.add_argument(
         "--charts",
         action="store_true",
-        help="Generate charts for the first completed trades.",
+        help=(
+            "Generate Gate-style charts for the latest successful, "
+            "failed, and recent trades. Disabled by default."
+        ),
     )
     backtest_parser.add_argument(
         "--max-charts",
         type=int,
         default=10,
-        help="Maximum number of trade charts. Default: 10",
+        help="Number of charts per group. Default: 10",
     )
 
 
@@ -151,8 +162,7 @@ def run_inspect(csv_path: Path, config_path: Path, tail: int) -> int:
         "volume_ma", "swing_low", "swing_high", "signal", "score",
         "size_multiplier", "stop_price",
     ]
-    print("NEXUS V2 v2.0.1-dev23")
-    print(f"- Workers:         {workers}")
+    print("NEXUS V2 v2.0.1-dev26")
     print(frame[cols].tail(max(1, tail)).to_string(index=False))
     return 0
 
@@ -168,8 +178,7 @@ def run_signals(csv_path: Path, config_path: Path, output_path: Path) -> int:
         .groupby("month")
         .size()
     )
-    print("NEXUS V2 v2.0.1-dev23")
-    print(f"- Workers:         {workers}")
+    print("NEXUS V2 v2.0.1-dev26")
     print(f"- Total signals: {len(signals):,}")
     print(f"- Long signals:  {(signals['signal'] == 'LONG').sum():,}")
     print(f"- Short signals: {(signals['signal'] == 'SHORT').sum():,}")
@@ -197,6 +206,14 @@ def run_backtest_command(
     charts: bool,
     max_charts: int,
 ) -> int:
+    command_started = perf_counter()
+    raw_rows = len(load_ohlcv_csv(csv_path))
+    estimate = estimate_backtest_seconds(raw_rows)
+
+    print("NEXUS V2 v2.0.1-dev26")
+    print(f"- Data rows:        {raw_rows:,}")
+    print(f"- Estimated time:   {format_duration(estimate)}")
+
     config, frame = _load_enriched(csv_path, config_path)
     trades, curve = run_backtest(frame, config)
     stats = calculate_statistics(
@@ -249,8 +266,7 @@ def run_backtest_command(
         min_month = 0
         max_month = 0
 
-    print("NEXUS V2 v2.0.1-dev23")
-    print(f"- Workers:         {workers}")
+    print("NEXUS V2 v2.0.1-dev26")
     print(f"- Trades:          {stats['trades']:,}")
     print(f"- Wins:            {stats['wins']:,}")
     print(f"- Losses:          {stats['losses']:,}")
@@ -271,7 +287,19 @@ def run_backtest_command(
     print(f"- Stop analysis:   {stop_analysis_output.resolve()}")
     print(f"- Stop debug:      {stop_debug_output.resolve()}")
     if charts:
-        print(f"- Trade charts:    {len(chart_paths)} generated")
+        print(
+            f"- Trade charts:    {len(chart_paths)} generated "
+            f"(successful/failed/recent)"
+        )
+        print(
+            "- Chart folder:    "
+            f"{Path('reports/trade_charts').resolve()}"
+        )
+
+    elapsed = perf_counter() - command_started
+    record_runtime("backtest", elapsed, raw_rows)
+    print(f"- Elapsed time:     {format_duration(elapsed)}")
+    print(f"- Next estimate:    {format_duration(elapsed)}")
     return 0
 
 
@@ -285,22 +313,50 @@ def run_optimize_command(
     yearly_output: Path,
     workers: int,
 ) -> int:
+    command_started = perf_counter()
     strategy_config = load_config(config_path)
     optimizer_config = load_optimizer_config(optimizer_config_path)
     market = load_ohlcv_csv(csv_path)
+
+    planned_runs, stage_sizes = optimizer_plan(optimizer_config)
+    estimate = estimate_optimizer_seconds(
+        rows=len(market),
+        workers=workers,
+        runs=planned_runs,
+        stage_sizes=stage_sizes,
+    )
+
+    print("NEXUS V2 v2.0.1-dev26")
+    print(f"- Workers:         {workers}")
+    print(f"- Planned runs:    {planned_runs}")
+    print(f"- Estimated time:  {format_duration(estimate)}")
+
+    def show_progress(stage: int, total: int, parameter: str) -> None:
+        elapsed = perf_counter() - command_started
+        if stage > 0:
+            projected_total = elapsed / stage * total
+            remaining = max(0.0, projected_total - elapsed)
+        else:
+            remaining = None
+        print(
+            f"- Progress:        {stage}/{total} stages | "
+            f"elapsed {format_duration(elapsed)} | "
+            f"remaining {format_duration(remaining)} | "
+            f"{parameter}"
+        )
 
     optimizer = SequentialOptimizer(
         strategy_config,
         optimizer_config,
         workers=workers,
+        progress_callback=show_progress,
     )
     results, best_config = optimizer.run(market)
     optimizer.export_results(results, output_path)
     optimizer.export_yearly_results(yearly_output)
     optimizer.export_best_config(best_config, best_config_output)
 
-    print("NEXUS V2 v2.0.1-dev23")
-    print(f"- Workers:         {workers}")
+    print("NEXUS V2 v2.0.1-dev26")
     print(f"- Optimizer runs:  {len(results):,}")
     if not results.empty:
         valid = results.loc[results["objective"].map(lambda x: x != float("-inf"))]
@@ -331,6 +387,17 @@ def run_optimize_command(
     print(f"- Results saved:   {output_path.resolve()}")
     print(f"- Yearly results:  {yearly_output.resolve()}")
     print(f"- Best config:     {best_config_output.resolve()}")
+
+    elapsed = perf_counter() - command_started
+    record_runtime(
+        "optimize",
+        elapsed,
+        rows=len(market),
+        workers=workers,
+        runs=len(results),
+    )
+    print(f"- Elapsed time:     {format_duration(elapsed)}")
+    print(f"- Next estimate:    {format_duration(elapsed)}")
     return 0
 
 

@@ -1,101 +1,111 @@
-# NEXUS V2 — v2.0.1-dev23
+# NEXUS V2 — v2.0.1-dev26
 
-DEV23은 전략을 변경하지 않고 옵티마이저 실행 속도만 개선합니다.
+DEV25는 현재 옵티마이저 1위 설정을 기본 전략에 적용하고,
+선택형 거래 검토 차트를 개선합니다.
 
-## 추가된 속도 개선
+## 적용된 기본 설정
 
-### 1. 멀티프로세싱
+```yaml
+entry:
+  l1_rsi_long_max: 30.0
+  l1_rsi_short_min: 75.0
+  min_rsi_difference: 10.0
+  pivot_left_bars: 3
+  l1_right_bars: 3
+  l2_right_bars: 1
+  adx_min: 20.0
+  adx_max: 30.0
 
-같은 최적화 단계 안의 후보값을 여러 CPU 프로세스에서 동시에 실행합니다.
+risk:
+  stop_loss_pct: 0.8
+
+exit:
+  tp1_pct: 2.0
+  tp2_pct: 3.0
+  tp1_fraction: 0.7
+  tp2_fraction: 0.3
+```
+
+## 차트 출력은 기본 OFF
+
+일반 백테스트:
 
 ```powershell
-.\.venv\Scripts\python.exe nexus.py optimize .\data\BTCUSDT_15M.csv --workers 10
+.\.venv\Scripts\python.exe nexus.py backtest .\data\BTCUSDT_15M.csv
 ```
 
-`--workers 1`을 사용하면 기존처럼 단일 프로세스로 실행됩니다.
-
-Core Ultra 7 155H + RAM 16GB 환경에서는 먼저 `8~10` 워커를 권장합니다.
-12개 이상은 메모리 압박으로 오히려 느려질 수 있습니다.
-
-### 2. Indicator Cache
-
-RSI, ADX, ATR, 볼린저, 거래량 평균 등 지표 설정이 같으면 다시 계산하지 않습니다.
-
-### 3. Signal Cache
-
-SL, TP처럼 진입 조건과 관계없는 값만 바뀌면 RSI 다이버전스 신호를 다시 계산하지 않습니다.
-
-## 단계형 최적화와 병렬 처리
-
-최적화 단계 자체는 순서대로 진행됩니다.
-
-```text
-ADX 구간 선택
-→ RSI 기준 선택
-→ 피벗 선택
-→ SL 선택
-→ TP1 선택
-→ TP2 선택
-```
-
-하지만 각 단계 안의 후보는 동시에 실행됩니다.
-
-예:
-
-```text
-SL 단계
-0.8 / 1.0 / 1.2 / 1.5 / 2.0
-```
-
-5개 후보를 최대 5개 프로세스가 병렬 백테스트합니다.
-
-## 실행
-
-자동 권장 워커:
+차트를 포함한 백테스트:
 
 ```powershell
-.\.venv\Scripts\python.exe nexus.py optimize .\data\BTCUSDT_15M.csv
+.\.venv\Scripts\python.exe nexus.py backtest .\data\BTCUSDT_15M.csv --charts
 ```
 
-Trevor-OMEN 권장 시작값:
+그룹당 출력 수 변경:
 
 ```powershell
-.\.venv\Scripts\python.exe nexus.py optimize .\data\BTCUSDT_15M.csv --workers 10
+.\.venv\Scripts\python.exe nexus.py backtest .\data\BTCUSDT_15M.csv --charts --max-charts 20
 ```
 
-노트북이 버벅거리거나 메모리가 90% 이상이면:
+`--max-charts 10`은 다음을 각각 10개씩 출력합니다.
 
-```powershell
-.\.venv\Scripts\python.exe nexus.py optimize .\data\BTCUSDT_15M.csv --workers 6
-```
+- 최근 성공 거래 10개
+- 최근 실패 거래 10개
+- 전체 최근 거래 10개
 
-## 결과
+총 최대 30장입니다.
 
-기존과 동일합니다.
+## 저장 위치
 
 ```text
-reports/optimizer_results.csv
-reports/optimizer_yearly_results.csv
-reports/best_strategy.yaml
+reports/trade_charts/
+├── successful/
+├── failed/
+├── recent/
+└── chart_index.csv
 ```
 
-`optimizer_results.csv`에는 캐시 적중 여부도 기록됩니다.
+기존 폴더는 새 차트 실행 때 자동으로 비워져 오래된 사진이 섞이지 않습니다.
 
-```text
-indicator_cache_hit
-signal_cache_hit
-```
+## 차트 표시 내용
+
+- Gate 스타일의 어두운 거래소 화면
+- 상승봉 녹색 / 하락봉 빨간색
+- 신호 확정 봉
+- 실제 진입 봉과 진입 가격
+- SL / TP1 / TP2
+- 실제 청산 위치와 청산 이유
+- RSI 다이버전스 L1/L2 가격
+- L1/L2 RSI 및 차이
+- ADX
+- 점수
+- 보유 봉 수
+- 순손익
+- 진입 이유
 
 ## 검증
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe nexus.py backtest .\data\BTCUSDT_15M.csv --charts
 ```
 
 ## 커밋
 
 ```powershell
 git add .
-git commit -m "perf: parallelize optimizer and cache indicators and signals"
+git commit -m "feat: apply best settings and add opt-in Gate-style trade charts"
 git push
 ```
+
+
+## DEV26 차트 개선
+
+각 거래 이미지가 세 개의 패널로 구성됩니다.
+
+```text
+가격 차트: L1/L2, 가격 다이버전스, 진입/SL/TP/청산
+RSI 차트: RSI 흐름, 30/70 기준선, L1/L2 RSI 연결선
+ADX 차트: ADX 흐름, 허용 구간 20~30, 신호 시점 ADX
+```
+
+L1과 L2는 큰 라벨과 화살표로 표시되어 바로 구분할 수 있습니다.

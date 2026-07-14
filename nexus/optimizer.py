@@ -6,7 +6,7 @@ import json
 import math
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 import pandas as pd
@@ -387,10 +387,12 @@ class SequentialOptimizer:
         base_strategy_config: dict[str, Any],
         optimizer_config: dict[str, Any],
         workers: int = 1,
+        progress_callback: Callable[[int, int, str], None] | None = None,
     ) -> None:
         self.base_strategy_config = deepcopy(base_strategy_config)
         self.optimizer_config = optimizer_config
         self.workers = max(1, int(workers))
+        self.progress_callback = progress_callback
         self.yearly_results = pd.DataFrame()
         self.indicator_cache_hits = 0
         self.signal_cache_hits = 0
@@ -419,6 +421,7 @@ class SequentialOptimizer:
             (parameter, values)
             for parameter, values in self.optimizer_config["parameters"].items()
         )
+        total_stage_count = len(stages)
 
         executor: ProcessPoolExecutor | None = None
         if self.workers > 1:
@@ -429,7 +432,7 @@ class SequentialOptimizer:
             )
 
         try:
-            for parameter, values in stages:
+            for stage_index, (parameter, values) in enumerate(stages, start=1):
                 tasks: list[tuple[Any, ...]] = []
 
                 for value in values:
@@ -508,6 +511,13 @@ class SequentialOptimizer:
                         current_config["entry"]["adx_max"] = best["adx_max"]
                     else:
                         _set_nested(current_config, parameter, best["value"])
+
+                if self.progress_callback is not None:
+                    self.progress_callback(
+                        stage_index,
+                        total_stage_count,
+                        parameter,
+                    )
         finally:
             if executor is not None:
                 executor.shutdown(wait=True)
