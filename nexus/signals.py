@@ -33,6 +33,7 @@ def _divergence_signals(
     l2_right: int,
     l1_rsi_threshold: float,
     min_rsi_difference: float,
+    adx_min: float,
     adx_max: float,
 ) -> pd.DataFrame:
     """
@@ -102,7 +103,10 @@ def _divergence_signals(
         rsi_condition = rsi_difference >= min_rsi_difference
 
         adx_value = frame.at[signal_index, "adx"]
-        adx_condition = pd.notna(adx_value) and float(adx_value) <= adx_max
+        adx_condition = (
+            pd.notna(adx_value)
+            and adx_min <= float(adx_value) <= adx_max
+        )
 
         if not (price_condition and rsi_condition and adx_condition):
             continue
@@ -129,7 +133,10 @@ def add_signal_columns(frame: pd.DataFrame, config: dict[str, Any]) -> pd.DataFr
     l1_right = int(entry_cfg["l1_right_bars"])
     l2_right = int(entry_cfg["l2_right_bars"])
     min_rsi_difference = float(entry_cfg["min_rsi_difference"])
+    adx_min = float(entry_cfg.get("adx_min", 0.0))
     adx_max = float(entry_cfg["adx_max"])
+    if adx_min >= adx_max:
+        raise ValueError("entry.adx_min must be less than entry.adx_max.")
 
     components = _candle_components(result)
     body = components["body"]
@@ -166,12 +173,12 @@ def add_signal_columns(frame: pd.DataFrame, config: dict[str, Any]) -> pd.DataFr
     long_div = _divergence_signals(
         result, "LONG", left, l1_right, l2_right,
         float(entry_cfg["l1_rsi_long_max"]), min_rsi_difference,
-        adx_max,
+        adx_min, adx_max,
     )
     short_div = _divergence_signals(
         result, "SHORT", left, l1_right, l2_right,
         float(entry_cfg["l1_rsi_short_min"]), min_rsi_difference,
-        adx_max,
+        adx_min, adx_max,
     )
 
     result["long_setup"] = long_div["setup"].astype(bool)

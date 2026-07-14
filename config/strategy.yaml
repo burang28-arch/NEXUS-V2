@@ -1,6 +1,6 @@
 project:
   name: NEXUS V2
-  version: 2.0.1-dev21
+  version: 2.0.1-dev22
   symbol: BTCUSDT
   timeframe: 15m
 indicators:
@@ -26,6 +26,7 @@ entry:
   pivot_left_bars: 3
   l1_right_bars: 2
   l2_right_bars: 1
+  adx_min: 0.0
   adx_max: 25.0
 scoring:
   volume_above_average_points: 1

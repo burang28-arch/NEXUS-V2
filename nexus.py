@@ -8,7 +8,11 @@ from nexus.backtest import calculate_statistics, run_backtest
 from nexus.config import load_config
 from nexus.data import load_ohlcv_csv
 from nexus.indicators import add_indicators
-from nexus.optimizer import SequentialOptimizer, load_optimizer_config
+from nexus.optimizer import (
+    SequentialOptimizer,
+    load_optimizer_config,
+    recommended_workers,
+)
 from nexus.signals import add_signal_columns, extract_signals
 from nexus.reports.monthly_report import MonthlyReport
 from nexus.reports.signal_analysis import SignalAnalyzer
@@ -114,6 +118,20 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path("reports/best_strategy.yaml"),
     )
+    optimize_parser.add_argument(
+        "--yearly-output",
+        type=Path,
+        default=Path("reports/optimizer_yearly_results.csv"),
+    )
+    optimize_parser.add_argument(
+        "--workers",
+        type=int,
+        default=recommended_workers(),
+        help=(
+            "Parallel optimizer processes. Default is hardware-aware; "
+            "use 1 to disable multiprocessing."
+        ),
+    )
 
     return parser
 
@@ -133,7 +151,8 @@ def run_inspect(csv_path: Path, config_path: Path, tail: int) -> int:
         "volume_ma", "swing_low", "swing_high", "signal", "score",
         "size_multiplier", "stop_price",
     ]
-    print("NEXUS V2 v2.0.1-dev20")
+    print("NEXUS V2 v2.0.1-dev23")
+    print(f"- Workers:         {workers}")
     print(frame[cols].tail(max(1, tail)).to_string(index=False))
     return 0
 
@@ -149,7 +168,8 @@ def run_signals(csv_path: Path, config_path: Path, output_path: Path) -> int:
         .groupby("month")
         .size()
     )
-    print("NEXUS V2 v2.0.1-dev20")
+    print("NEXUS V2 v2.0.1-dev23")
+    print(f"- Workers:         {workers}")
     print(f"- Total signals: {len(signals):,}")
     print(f"- Long signals:  {(signals['signal'] == 'LONG').sum():,}")
     print(f"- Short signals: {(signals['signal'] == 'SHORT').sum():,}")
@@ -229,7 +249,8 @@ def run_backtest_command(
         min_month = 0
         max_month = 0
 
-    print("NEXUS V2 v2.0.1-dev20")
+    print("NEXUS V2 v2.0.1-dev23")
+    print(f"- Workers:         {workers}")
     print(f"- Trades:          {stats['trades']:,}")
     print(f"- Wins:            {stats['wins']:,}")
     print(f"- Losses:          {stats['losses']:,}")
@@ -261,29 +282,54 @@ def run_optimize_command(
     optimizer_config_path: Path,
     output_path: Path,
     best_config_output: Path,
+    yearly_output: Path,
+    workers: int,
 ) -> int:
     strategy_config = load_config(config_path)
     optimizer_config = load_optimizer_config(optimizer_config_path)
     market = load_ohlcv_csv(csv_path)
 
-    optimizer = SequentialOptimizer(strategy_config, optimizer_config)
+    optimizer = SequentialOptimizer(
+        strategy_config,
+        optimizer_config,
+        workers=workers,
+    )
     results, best_config = optimizer.run(market)
     optimizer.export_results(results, output_path)
+    optimizer.export_yearly_results(yearly_output)
     optimizer.export_best_config(best_config, best_config_output)
 
-    print("NEXUS V2 v2.0.1-dev20")
+    print("NEXUS V2 v2.0.1-dev23")
+    print(f"- Workers:         {workers}")
     print(f"- Optimizer runs:  {len(results):,}")
     if not results.empty:
-        valid = results.loc[results["objective"] != float("-inf")]
+        valid = results.loc[results["objective"].map(lambda x: x != float("-inf"))]
         if not valid.empty:
-            best = valid.sort_values(
-                ["objective", "net_profit", "trades"],
-                ascending=False,
-            ).iloc[0]
+            best = valid.iloc[0]
+            print(f"- Best score:      {best['objective']:.4f}")
             print(f"- Best PF:         {best['profit_factor']:.4f}")
             print(f"- Best trades:     {int(best['trades']):,}")
-            print(f"- Best parameter:  {best['parameter']}={best['value']}")
+            print(
+                f"- Best ADX range:  "
+                f"{best['adx_min']:.0f}-{best['adx_max']:.0f}"
+            )
+            print("- Top 10:")
+            top = valid.head(10)
+            for rank, (_, row) in enumerate(top.iterrows(), start=1):
+                print(
+                    f"  {rank:>2}. score={row['objective']:.4f} "
+                    f"PF={row['profit_factor']:.4f} "
+                    f"trades={int(row['trades'])} "
+                    f"MDD={row['max_drawdown_pct']:.2f}% "
+                    f"years={int(row['profitable_years'])}/"
+                    f"{int(row['evaluated_years'])}"
+                )
+    print(
+        f"- Cache hits:      indicators={optimizer.indicator_cache_hits}, "
+        f"signals={optimizer.signal_cache_hits}"
+    )
     print(f"- Results saved:   {output_path.resolve()}")
+    print(f"- Yearly results:  {yearly_output.resolve()}")
     print(f"- Best config:     {best_config_output.resolve()}")
     return 0
 
@@ -319,6 +365,8 @@ def main() -> int:
                 args.optimizer_config,
                 args.output,
                 args.best_config_output,
+                args.yearly_output,
+                args.workers,
             )
     except (FileNotFoundError, ValueError, KeyError, TypeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

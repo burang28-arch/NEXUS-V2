@@ -1,51 +1,101 @@
-# NEXUS V2 — v2.0.1-dev21
+# NEXUS V2 — v2.0.1-dev23
 
-DEV21은 기존 옵티마이저가 선택한 최적값을 기본 전략 설정에 적용합니다.
+DEV23은 전략을 변경하지 않고 옵티마이저 실행 속도만 개선합니다.
 
-## 적용값
+## 추가된 속도 개선
 
-```yaml
-entry:
-  strategy: rsi_divergence
-  l1_rsi_long_max: 30.0
-  l1_rsi_short_min: 75.0
-  min_rsi_difference: 10.0
-  pivot_left_bars: 3
-  l1_right_bars: 2
-  l2_right_bars: 1
-  adx_max: 25.0
+### 1. 멀티프로세싱
+
+같은 최적화 단계 안의 후보값을 여러 CPU 프로세스에서 동시에 실행합니다.
+
+```powershell
+.\.venv\Scripts\python.exe nexus.py optimize .\data\BTCUSDT_15M.csv --workers 10
 ```
 
-## 유지되는 리스크 및 청산 설정
+`--workers 1`을 사용하면 기존처럼 단일 프로세스로 실행됩니다.
 
-```yaml
-risk:
-  initial_equity: 1000.0
-  base_margin_pct: 3.0
-  leverage: 30.0
-  stop_loss_pct: 1.0
+Core Ultra 7 155H + RAM 16GB 환경에서는 먼저 `8~10` 워커를 권장합니다.
+12개 이상은 메모리 압박으로 오히려 느려질 수 있습니다.
 
-exit:
-  tp1_pct: 2.0
-  tp2_pct: 4.0
-  tp1_fraction: 0.7
-  tp2_fraction: 0.3
+### 2. Indicator Cache
+
+RSI, ADX, ATR, 볼린저, 거래량 평균 등 지표 설정이 같으면 다시 계산하지 않습니다.
+
+### 3. Signal Cache
+
+SL, TP처럼 진입 조건과 관계없는 값만 바뀌면 RSI 다이버전스 신호를 다시 계산하지 않습니다.
+
+## 단계형 최적화와 병렬 처리
+
+최적화 단계 자체는 순서대로 진행됩니다.
+
+```text
+ADX 구간 선택
+→ RSI 기준 선택
+→ 피벗 선택
+→ SL 선택
+→ TP1 선택
+→ TP2 선택
 ```
 
-DEV21에서는 옵티마이저 구조를 변경하지 않습니다.
-ADX 구간형 최적화는 DEV22에서 별도로 구현합니다.
+하지만 각 단계 안의 후보는 동시에 실행됩니다.
+
+예:
+
+```text
+SL 단계
+0.8 / 1.0 / 1.2 / 1.5 / 2.0
+```
+
+5개 후보를 최대 5개 프로세스가 병렬 백테스트합니다.
+
+## 실행
+
+자동 권장 워커:
+
+```powershell
+.\.venv\Scripts\python.exe nexus.py optimize .\data\BTCUSDT_15M.csv
+```
+
+Trevor-OMEN 권장 시작값:
+
+```powershell
+.\.venv\Scripts\python.exe nexus.py optimize .\data\BTCUSDT_15M.csv --workers 10
+```
+
+노트북이 버벅거리거나 메모리가 90% 이상이면:
+
+```powershell
+.\.venv\Scripts\python.exe nexus.py optimize .\data\BTCUSDT_15M.csv --workers 6
+```
+
+## 결과
+
+기존과 동일합니다.
+
+```text
+reports/optimizer_results.csv
+reports/optimizer_yearly_results.csv
+reports/best_strategy.yaml
+```
+
+`optimizer_results.csv`에는 캐시 적중 여부도 기록됩니다.
+
+```text
+indicator_cache_hit
+signal_cache_hit
+```
 
 ## 검증
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
-.\.venv\Scripts\python.exe nexus.py backtest .\data\BTCUSDT_15M.csv
 ```
 
 ## 커밋
 
 ```powershell
 git add .
-git commit -m "tune: apply optimized divergence strategy parameters"
+git commit -m "perf: parallelize optimizer and cache indicators and signals"
 git push
 ```
